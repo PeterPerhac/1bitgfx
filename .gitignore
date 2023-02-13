@@ -2,3 +2,8 @@
 .DS_Store
 *.1bp
 *.zip
+test-images/
+target/
+project/target/
+.idea/
+

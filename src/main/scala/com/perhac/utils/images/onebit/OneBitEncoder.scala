@@ -1,17 +1,15 @@
 package com.perhac.utils.images.onebit
+
 import com.perhac.utils.images.onebit.BlockColor.fromAwtColor
 
-import java.nio.ByteBuffer
 import java.awt.Color
 import java.awt.image.BufferedImage
 import java.io.{FileInputStream, FileOutputStream, OutputStream}
+import java.nio.ByteBuffer
 import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
 
 object OneBitEncoder {
-
-  def isWhitePixel(color: Color): Boolean =
-    color.getRGBColorComponents(null).sum > 1.5f
 
   @tailrec
   def processBlock(
@@ -47,11 +45,11 @@ object OneBitEncoder {
 
   def serialize(
       blocks: List[Block],
-      widthInBlocks: Int, //max a Word tho, 2 bytes, soz
+      widthInBlocksWord: Int, //max a Word tho, 2 bytes, soz
       out: OutputStream
   ): Unit = {
-    val heightInBlocks = blocks.size / widthInBlocks
-    out.write(ByteBuffer.allocate(4).putInt(widthInBlocks << 16 | heightInBlocks).array)
+    val heightInBlocks = blocks.size / widthInBlocksWord
+    out.write(ByteBuffer.allocate(4).putInt(widthInBlocksWord << 16 | heightInBlocks).array)
     out.write(blockDescriptorBytes(blocks))
     blocks.foreach({
       case block: MixedColorBlock =>
@@ -75,14 +73,13 @@ object OneBitEncoder {
         y <- (0 to 15).toList
         x <- (0 to 15).toList
       } yield fromAwtColor(
-        new Color(img.getRGB(colIdx * 16 + x, rowIdx * 16 + y))
+        color = new Color(img.getRGB(colIdx * 16 + x, rowIdx * 16 + y)),
+        midPoint = 2.0f
       )
 
       blocks.addOne(makeBlock(rgbs))
     }
-
-    blocks.foreach(println)
-    val out = new FileOutputStream("encodedImage.1bp")
+    val out = new FileOutputStream(args.drop(1).headOption.getOrElse("encodedImage.1bp"))
     try {
       serialize(blocks.toList, blockW, out)
     } finally {
