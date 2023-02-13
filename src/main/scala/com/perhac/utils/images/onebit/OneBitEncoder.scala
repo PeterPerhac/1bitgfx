@@ -1,10 +1,10 @@
 package com.perhac.utils.images.onebit
 import com.perhac.utils.images.onebit.BlockColor.fromAwtColor
-import java.nio.ByteBuffer
 
+import java.nio.ByteBuffer
 import java.awt.Color
 import java.awt.image.BufferedImage
-import java.io.{FileOutputStream, OutputStream}
+import java.io.{FileInputStream, FileOutputStream, OutputStream}
 import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
 
@@ -47,11 +47,11 @@ object OneBitEncoder {
 
   def serialize(
       blocks: List[Block],
-      widthInBlocks: Byte,
+      widthInBlocks: Int, //max a Word tho, 2 bytes, soz
       out: OutputStream
   ): Unit = {
-    out.write(Array[Byte](widthInBlocks))
-    out.write(ByteBuffer.allocate(4).putInt(blocks.size).array)
+    val heightInBlocks = blocks.size / widthInBlocks
+    out.write(ByteBuffer.allocate(4).putInt(widthInBlocks << 16 | heightInBlocks).array)
     out.write(blockDescriptorBytes(blocks))
     blocks.foreach({
       case block: MixedColorBlock =>
@@ -62,7 +62,7 @@ object OneBitEncoder {
 
   def main(args: Array[String]): Unit = {
     val img: BufferedImage = javax.imageio.ImageIO.read(
-      this.getClass.getClassLoader.getResourceAsStream(args.headOption.getOrElse("image.png"))
+      args.headOption.fold(this.getClass.getClassLoader.getResourceAsStream("image.png"))(new FileInputStream(_))
     )
     val blockW = img.getWidth / 16
     val blockH = img.getHeight / 16
@@ -84,7 +84,7 @@ object OneBitEncoder {
     blocks.foreach(println)
     val out = new FileOutputStream("encodedImage.1bp")
     try {
-      serialize(blocks.toList, blockW.toByte, out)
+      serialize(blocks.toList, blockW, out)
     } finally {
       out.close()
     }
