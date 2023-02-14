@@ -87,12 +87,11 @@ object OneBitDecoder {
     }
 
     blocksWithCoordinates.map({
-      case b @ BlockWithCoordinates(WhiteBlock, _, _) => b
-      case b @ BlockWithCoordinates(BlackBlock, _, _) => b
       case b @ BlockWithCoordinates(mcb: MixedColorBlock, _, _) =>
         val blockBuilder = new MixedColorBlockBuilder(mcb.firstColor)
         readBlockData(input, blockBuilder, 0)
         b.copy(block = blockBuilder.build())
+      case b => b
     })
   }
 
@@ -113,8 +112,8 @@ object OneBitDecoder {
     val blockDescriptorBytes: Array[Byte] = input.readNBytes(Math.ceil((blockW * blockH).toDouble / 4).toInt)
     val blockDescriptors: List[Block]     = unpack(blockDescriptorBytes)
     val blocksWithCoordinates             = resolveCoordinates(blockDescriptors, blockW)
-    val readyToPainBlocks                 = addLengths(blocksWithCoordinates, input)
-    readyToPainBlocks.foreach(paintBlock(gfx))
+    val readyToPaintBlocks                 = addLengths(blocksWithCoordinates, input)
+    readyToPaintBlocks.foreach(paintBlock(gfx))
     ImageIO.write(img, "PNG", new FileOutputStream("decodedImage.png"))
   }
 

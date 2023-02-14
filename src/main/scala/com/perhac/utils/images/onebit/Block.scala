@@ -3,21 +3,7 @@ package com.perhac.utils.images.onebit
 import java.awt.Color
 
 sealed trait Block {
-
   def descriptor: Byte
-
-  override def toString: String = this match {
-    case WhiteBlock => "white block"
-    case BlackBlock => "black block"
-    case block: MixedColorBlock =>
-      block match {
-        case WhiteBlackBlock(lengths) =>
-          "white first block with lengths: " + lengths.mkString(",")
-        case BlackWhiteBlock(lengths) =>
-          "black first block with lengths: " + lengths.mkString(",")
-      }
-  }
-
 }
 
 object Block {
@@ -31,10 +17,10 @@ object Block {
 }
 
 case object WhiteBlock extends Block {
-  override def descriptor: Byte = 0x03.toByte
+  override val descriptor: Byte = 0x03.toByte
 }
 case object BlackBlock extends Block {
-  override def descriptor: Byte = 0x00.toByte
+  override val descriptor: Byte = 0x00.toByte
 }
 
 sealed trait MixedColorBlock extends Block {
