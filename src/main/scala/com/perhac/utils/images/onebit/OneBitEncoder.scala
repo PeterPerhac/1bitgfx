@@ -8,8 +8,37 @@ import java.io.{FileInputStream, FileOutputStream, OutputStream}
 import java.nio.ByteBuffer
 import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
+import better.files._
 
 object OneBitEncoder {
+
+  def encode(inPath: String, outPath: Option[String], threshold: Float): Unit = {
+    val img: BufferedImage = javax.imageio.ImageIO.read(new FileInputStream(inPath))
+    val blockW             = img.getWidth / 16
+    val blockH             = img.getHeight / 16
+
+    val blocks: ArrayBuffer[Block] = new ArrayBuffer[Block](blockW * blockH)
+
+    //foreach block
+    for (rowIdx <- 0 until blockH; colIdx <- 0 until blockW) {
+      val rgbs = for {
+        y <- (0 to 15).toList
+        x <- (0 to 15).toList
+      } yield fromAwtColor(
+        color = new Color(img.getRGB(colIdx * 16 + x, rowIdx * 16 + y)),
+        midPoint = threshold
+      )
+
+      blocks.addOne(makeBlock(rgbs))
+    }
+    val out = new FileOutputStream(outPath.getOrElse(inPath.toFile.changeExtensionTo(".1bp").pathAsString))
+    try {
+      serialize(blocks.toList, blockW, out)
+    } finally {
+      out.close()
+    }
+
+  }
 
   @tailrec
   def processBlock(
@@ -40,6 +69,7 @@ object OneBitEncoder {
         case one :: two :: Nil                  => (one << 6 | two << 4).toByte
         case one :: Nil                         => (one << 6).toByte
         case Nil                                => sys.error("grouping must not produce empty list")
+        case _                                  => sys.error("more??? can't have more than 4 things when grouped by 4")
       })
       .toArray
 
@@ -56,36 +86,6 @@ object OneBitEncoder {
         out.write(block.lengths.map(_.toByte).toArray)
       case _ => //do nothing
     })
-  }
-
-  def main(args: Array[String]): Unit = {
-    val img: BufferedImage = javax.imageio.ImageIO.read(
-      args.headOption.fold(this.getClass.getClassLoader.getResourceAsStream("image.png"))(new FileInputStream(_))
-    )
-    val blockW = img.getWidth / 16
-    val blockH = img.getHeight / 16
-
-    val blocks: ArrayBuffer[Block] = new ArrayBuffer[Block](blockW * blockH)
-
-    //foreach block
-    for (rowIdx <- 0 until blockH; colIdx <- 0 until blockW) {
-      val rgbs = for {
-        y <- (0 to 15).toList
-        x <- (0 to 15).toList
-      } yield fromAwtColor(
-        color = new Color(img.getRGB(colIdx * 16 + x, rowIdx * 16 + y)),
-        midPoint = 2.0f
-      )
-
-      blocks.addOne(makeBlock(rgbs))
-    }
-    val out = new FileOutputStream(args.drop(1).headOption.getOrElse("encodedImage.1bp"))
-    try {
-      serialize(blocks.toList, blockW, out)
-    } finally {
-      out.close()
-    }
-
   }
 
 }

@@ -1,5 +1,7 @@
 package com.perhac.utils.images.onebit
 
+import better.files._
+
 import java.awt.image.BufferedImage
 import java.awt.{Color, Graphics}
 import java.io.{FileInputStream, FileOutputStream, InputStream}
@@ -9,6 +11,32 @@ import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
 
 object OneBitDecoder {
+
+  def decode(inPath: String, outPath: Option[String]): Unit = {
+    val input: InputStream = new FileInputStream(inPath)
+
+    val dim                = ByteBuffer.wrap(input.readNBytes(4)).getInt
+    val blockW: Int        = dim >>> 16
+    val blockH: Int        = dim & 0x00ff
+    val imgW: Int          = blockW * 16
+    val imgH: Int          = blockH * 16
+    val img: BufferedImage = new BufferedImage(imgW, imgH, BufferedImage.TYPE_INT_RGB)
+    val gfx: Graphics      = img.getGraphics
+
+    val blockDescriptorBytes: Array[Byte] = input.readNBytes(Math.ceil((blockW * blockH).toDouble / 4).toInt)
+    val blockDescriptors: List[Block]     = unpack(blockDescriptorBytes)
+    val blocksWithCoordinates             = resolveCoordinates(blockDescriptors, blockW)
+    val readyToPaintBlocks                = addLengths(blocksWithCoordinates, input)
+
+    readyToPaintBlocks.foreach(paintBlock(gfx))
+
+    val outStream = new FileOutputStream(outPath.getOrElse(inPath.toFile.changeExtensionTo(".png").pathAsString))
+    try {
+      ImageIO.write(img, "PNG", outStream)
+    } finally {
+      outStream.close()
+    }
+  }
 
   private case class BlockWithCoordinates(block: Block, colIdx: Int, rowIdx: Int) {
     override def toString: String = s"${block.toString} at [$colIdx, $rowIdx]"
@@ -93,28 +121,6 @@ object OneBitDecoder {
         b.copy(block = blockBuilder.build())
       case b => b
     })
-  }
-
-  def main(args: Array[String]): Unit = {
-    val input: InputStream =
-      args.headOption.fold(this.getClass.getClassLoader.getResourceAsStream("image.1bp"))(new FileInputStream(_))
-
-    val dim                = ByteBuffer.wrap(input.readNBytes(4)).getInt
-    val blockW: Int        = dim >>> 16
-    val blockH: Int        = dim & 0x00ff
-    val imgW: Int          = blockW * 16
-    val imgH: Int          = blockH * 16
-    val img: BufferedImage = new BufferedImage(imgW, imgH, BufferedImage.TYPE_INT_RGB)
-    val gfx: Graphics      = img.getGraphics
-    gfx.setColor(Color.MAGENTA)
-    gfx.fillRect(0, 0, imgW, imgH)
-
-    val blockDescriptorBytes: Array[Byte] = input.readNBytes(Math.ceil((blockW * blockH).toDouble / 4).toInt)
-    val blockDescriptors: List[Block]     = unpack(blockDescriptorBytes)
-    val blocksWithCoordinates             = resolveCoordinates(blockDescriptors, blockW)
-    val readyToPaintBlocks                 = addLengths(blocksWithCoordinates, input)
-    readyToPaintBlocks.foreach(paintBlock(gfx))
-    ImageIO.write(img, "PNG", new FileOutputStream("decodedImage.png"))
   }
 
 }
