@@ -4,21 +4,37 @@ import com.perhac.utils.images.onebit.BlockColor.fromAwtColor
 
 import java.awt.Color
 import java.awt.image.BufferedImage
-import java.io.{FileInputStream, FileOutputStream, OutputStream}
+import java.io.{ByteArrayOutputStream, FileInputStream, FileOutputStream, OutputStream}
 import java.nio.ByteBuffer
+import java.util.zip.Deflater
 import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
-import better.files._
 
 object OneBitEncoder {
 
-  def encode(inPath: String, outPath: Option[String], threshold: Float): Unit = {
+  def calculateMidPoint(img: BufferedImage): Float = {
+    val averages = for {
+      x <- 0 until img.getWidth
+      y <- 0 until img.getHeight
+    } yield {
+      val clr   = img.getRGB(x, y)
+      val red   = (clr & 0x00ff0000) >> 16
+      val green = (clr & 0x0000ff00) >> 8
+      val blue  = clr & 0x000000ff
+      (red + green + blue).toFloat / (3 * 256)
+    }
+    val midpoint = averages.toList.sum / averages.size
+    System.out.println("auto threshold: " + midpoint)
+    midpoint
+  }
+
+  def encode(inPath: String, outPath: String, threshold: Option[Float]): Unit = {
     val img: BufferedImage = javax.imageio.ImageIO.read(new FileInputStream(inPath))
     val blockW             = img.getWidth / 16
     val blockH             = img.getHeight / 16
 
     val blocks: ArrayBuffer[Block] = new ArrayBuffer[Block](blockW * blockH)
-
+    val midpoint: Float            = threshold.getOrElse(calculateMidPoint(img))
     //foreach block
     for (rowIdx <- 0 until blockH; colIdx <- 0 until blockW) {
       val rgbs = for {
@@ -26,14 +42,15 @@ object OneBitEncoder {
         x <- (0 to 15).toList
       } yield fromAwtColor(
         color = new Color(img.getRGB(colIdx * 16 + x, rowIdx * 16 + y)),
-        midPoint = threshold
+        midPoint = midpoint
       )
 
       blocks.addOne(makeBlock(rgbs))
     }
-    val out = new FileOutputStream(outPath.getOrElse(inPath.toFile.changeExtensionTo(".1bp").pathAsString))
+    val out = new FileOutputStream(outPath)
     try {
       serialize(blocks.toList, blockW, out)
+      System.out.println("output file saved to:" + outPath)
     } finally {
       out.close()
     }
@@ -81,11 +98,22 @@ object OneBitEncoder {
     val heightInBlocks = blocks.size / widthInBlocksWord
     out.write(ByteBuffer.allocate(4).putInt(widthInBlocksWord << 16 | heightInBlocks).array)
     out.write(blockDescriptorBytes(blocks))
-    blocks.foreach({
+    val expectedBlockDataSize =
+      blocks.count(_.isInstanceOf[MixedColorBlock]) * 32 //rough guess at initial byte array size needed
+    val blockData: ByteArrayOutputStream = new ByteArrayOutputStream(expectedBlockDataSize)
+    blocks.foreach {
       case block: MixedColorBlock =>
-        out.write(block.lengths.map(_.toByte).toArray)
+        blockData.write(block.lengths.map(_.toByte).toArray)
       case _ => //do nothing
-    })
+    }
+    blockData.flush()
+    val output: Array[Byte]  = new Array(blockData.size() / 2)
+    val compresser: Deflater = new Deflater()
+    compresser.setInput(blockData.toByteArray)
+    compresser.finish()
+    compresser.deflate(output)
+    compresser.end()
+    out.write(output)
   }
 
 }

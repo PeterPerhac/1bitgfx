@@ -30,7 +30,10 @@ object OneBitDecoder {
 
     readyToPaintBlocks.foreach(paintBlock(gfx))
 
-    val outStream = new FileOutputStream(outPath.getOrElse(inPath.toFile.changeExtensionTo(".png").pathAsString))
+    val inFile = inPath.toFile
+    val outStream = new FileOutputStream(
+      outPath.getOrElse(inFile.parent.path.resolve(inFile.nameWithoutExtension + ".png").toAbsolutePath.toString)
+    )
     try {
       ImageIO.write(img, "PNG", outStream)
     } finally {

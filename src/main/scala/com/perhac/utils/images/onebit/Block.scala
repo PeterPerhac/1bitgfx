@@ -44,6 +44,6 @@ case object White extends BlockColor
 object BlockColor {
   def fromAwtColor(color: Color, midPoint: Float): BlockColor = {
     // let AWT allocate the returned array by passing null
-    if (color.getRGBColorComponents(null).sum > midPoint) White else Black
+    if (color.getRGBColorComponents(null).sum > (3 * midPoint)) White else Black
   }
 }

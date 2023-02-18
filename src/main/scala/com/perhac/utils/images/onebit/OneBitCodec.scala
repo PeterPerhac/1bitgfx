@@ -1,8 +1,11 @@
 package com.perhac.utils.images.onebit
 
+import better.files._
+import cats.implicits._
 import com.monovore.decline.Opts.{argument, flag}
 import com.monovore.decline._
-import cats.implicits._
+
+import scala.util.Try
 
 object OneBitCodec {
 
@@ -14,26 +17,37 @@ object OneBitCodec {
       .orNone
 
   private val threshold = Opts
-    .option[Float](
+    .option[String](
       long = "threshold",
       help =
-        "Threshold beyond which a pixel will be considered white. In the range between 0 (all pixels will be considered white) and 3 (all pixels will be considered black)",
+        "threshold (float|'auto') beyond which a pixel will be considered white. In the range between 0 (all pixels will be considered white) and 1 (all pixels will be considered black)",
       short = "t",
       metavar = "threshold",
       visibility = Visibility.Partial
     )
-    .withDefault(2.0f)
+    .withDefault("0.7")
 
   private val encodeFlag = flag("encode", "encode the text in file specified", "e").map(_ => encode)
   private val decodeFlag = flag("decode", "decode the text in file specified", "d").map(_ => decode)
   private val operation  = encodeFlag orElse decodeFlag
-
+  private def illegalThreshold = sys.error(
+    "Illegal threshold argument. Provide a floating point number in the range 0..1 or use the 'auto' argument"
+  )
   val main: Opts[Unit] = (inFile, operation, outFile, threshold).mapN { (in, operation, out, t) =>
-    operation(in, out, t)
+    val parsedThreshold = Try(t.toFloat).toOption match {
+      case Some(value) => if (value >= 0.0f && value <= 1.0f) Some(value) else illegalThreshold
+      case None        => if (t.equalsIgnoreCase("auto")) None else illegalThreshold
+    }
+    operation(in, out, parsedThreshold)
   }
 
-  val encode: (String, Option[String], Float) => Unit = OneBitEncoder.encode
-  val decode: (String, Option[String], Float) => Unit = (in, out, _) => OneBitDecoder.decode(in, out)
+  val encode: (String, Option[String], Option[Float]) => Unit = (in, out, threshold) => {
+    val inFile  = in.toFile
+    val outPath = out.getOrElse(inFile.parent.path.resolve(inFile.nameWithoutExtension) + ".1bp")
+    OneBitEncoder.encode(in, outPath, threshold)
+  }
+
+  val decode: (String, Option[String], Option[Float]) => Unit = (in, out, _) => OneBitDecoder.decode(in, out)
 
 }
 
