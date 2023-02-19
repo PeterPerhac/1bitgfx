@@ -5,7 +5,6 @@ import com.perhac.utils.images.onebit.BlockColor.fromAwtColor
 import java.awt.Color
 import java.awt.image.BufferedImage
 import java.io.{ByteArrayOutputStream, FileInputStream, FileOutputStream, OutputStream}
-import java.nio.ByteBuffer
 import java.util.zip.Deflater
 import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
@@ -96,7 +95,7 @@ object OneBitEncoder {
       out: OutputStream
   ): Unit = {
     val heightInBlocks = blocks.size / widthInBlocksWord
-    out.write(ByteBuffer.allocate(4).putInt(widthInBlocksWord << 16 | heightInBlocks).array)
+    out.write(Array[Byte](widthInBlocksWord.toByte,heightInBlocks.toByte))
     out.write(blockDescriptorBytes(blocks))
     val expectedBlockDataSize =
       blocks.count(_.isInstanceOf[MixedColorBlock]) * 32 //rough guess at initial byte array size needed
@@ -106,14 +105,13 @@ object OneBitEncoder {
         blockData.write(block.lengths.map(_.toByte).toArray)
       case _ => //do nothing
     }
-    blockData.flush()
-    val output: Array[Byte]  = new Array(blockData.size() / 2)
+    val output: Array[Byte]  = new Array(blockData.size())
     val compresser: Deflater = new Deflater()
     compresser.setInput(blockData.toByteArray)
     compresser.finish()
-    compresser.deflate(output)
+    val deflatedBytes = compresser.deflate(output)
     compresser.end()
-    out.write(output)
+    out.write(output, 0, deflatedBytes)
   }
 
 }

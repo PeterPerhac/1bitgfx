@@ -4,8 +4,8 @@ import better.files._
 
 import java.awt.image.BufferedImage
 import java.awt.{Color, Graphics}
-import java.io.{FileInputStream, FileOutputStream, InputStream}
-import java.nio.ByteBuffer
+import java.io.{ByteArrayInputStream, FileInputStream, FileOutputStream, InputStream}
+import java.util.zip.Inflater
 import javax.imageio.ImageIO
 import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
@@ -15,9 +15,8 @@ object OneBitDecoder {
   def decode(inPath: String, outPath: Option[String]): Unit = {
     val input: InputStream = new FileInputStream(inPath)
 
-    val dim                = ByteBuffer.wrap(input.readNBytes(4)).getInt
-    val blockW: Int        = dim >>> 16
-    val blockH: Int        = dim & 0x00ff
+    val blockW: Int        = input.read()
+    val blockH: Int        = input.read()
     val imgW: Int          = blockW * 16
     val imgH: Int          = blockH * 16
     val img: BufferedImage = new BufferedImage(imgW, imgH, BufferedImage.TYPE_INT_RGB)
@@ -105,6 +104,16 @@ object OneBitDecoder {
         paintLengths(gfx, block, ls, initialColorWhite = false)
     }
 
+  def decompressBlockData(compressedInput: InputStream): InputStream = {
+    val inflater: Inflater = new Inflater()
+    val compressedBytes    = compressedInput.readAllBytes()
+    inflater.setInput(compressedBytes)
+    val decompressedData: Array[Byte] = new Array(compressedBytes.length * 5)
+    val inflatedByteCount             = inflater.inflate(decompressedData)
+    inflater.end()
+    new ByteArrayInputStream(decompressedData, 0, inflatedByteCount)
+  }
+
   private def addLengths(
       blocksWithCoordinates: List[BlockWithCoordinates],
       input: InputStream
@@ -117,10 +126,12 @@ object OneBitDecoder {
       if (read + length < 256) readBlockData(stream, builder, read + length)
     }
 
+    val blockData: InputStream = decompressBlockData(input)
+
     blocksWithCoordinates.map({
       case b @ BlockWithCoordinates(mcb: MixedColorBlock, _, _) =>
         val blockBuilder = new MixedColorBlockBuilder(mcb.firstColor)
-        readBlockData(input, blockBuilder, 0)
+        readBlockData(blockData, blockBuilder, 0)
         b.copy(block = blockBuilder.build())
       case b => b
     })
