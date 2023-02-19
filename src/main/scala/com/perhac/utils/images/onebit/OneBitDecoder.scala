@@ -1,6 +1,7 @@
 package com.perhac.utils.images.onebit
 
 import better.files._
+import com.perhac.utils.images.onebit.OneBitCodec.time
 
 import java.awt.image.BufferedImage
 import java.awt.{Color, Graphics}
@@ -26,15 +27,19 @@ object OneBitDecoder {
     val blockDescriptors: List[Block]     = unpack(blockDescriptorBytes)
     val blocksWithCoordinates             = resolveCoordinates(blockDescriptors, blockW)
     val readyToPaintBlocks                = addLengths(blocksWithCoordinates, input)
-
     readyToPaintBlocks.foreach(paintBlock(gfx))
+    gfx.dispose()
 
     val inFile = inPath.toFile
-    val outStream = new FileOutputStream(
+    val outFilePath =
       outPath.getOrElse(inFile.parent.path.resolve(inFile.nameWithoutExtension + ".png").toAbsolutePath.toString)
-    )
+
+    val outStream = new FileOutputStream(outFilePath)
     try {
-      ImageIO.write(img, "PNG", outStream)
+      time(Some("write image to output")) {
+        ImageIO.write(img, "PNG", outStream)
+        System.out.println("output file saved to:" + outFilePath)
+      }
     } finally {
       outStream.close()
     }
@@ -99,7 +104,6 @@ object OneBitDecoder {
         gfx.fillRect(block.colIdx * 16, block.rowIdx * 16, 16, 16)
       case WhiteBlackBlock(ls) =>
         paintLengths(gfx, block, ls, initialColorWhite = true)
-
       case BlackWhiteBlock(ls) =>
         paintLengths(gfx, block, ls, initialColorWhite = false)
     }

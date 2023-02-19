@@ -5,6 +5,8 @@ ThisBuild / scalaVersion := "2.13.10"
 lazy val root = (project in file("."))
   .settings(
     name := "1bitgfx",
+    assembly / mainClass := Some("com.perhac.utils.images.onebit.OneBitCodecApp"),
+    assembly / assemblyJarName := "1bp-codec.jar",
   )
 
 libraryDependencies += "com.github.pathikrit" %% "better-files" % "3.9.1"
