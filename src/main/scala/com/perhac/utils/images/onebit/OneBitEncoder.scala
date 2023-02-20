@@ -1,10 +1,12 @@
 package com.perhac.utils.images.onebit
 
 import com.perhac.utils.images.onebit.BlockColor.fromAwtColor
+import com.perhac.utils.images.onebit.OneBitCodec.cannotOverwriteExistingFile
 
 import java.awt.Color
 import java.awt.image.BufferedImage
 import java.io.{ByteArrayOutputStream, FileInputStream, FileOutputStream, OutputStream}
+import java.nio.file.Paths
 import java.util.zip.Deflater
 import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
@@ -27,7 +29,7 @@ object OneBitEncoder {
     midpoint
   }
 
-  def encode(inPath: String, outPath: String, threshold: Option[Float]): Unit = {
+  def encode(inPath: String, outPath: String, threshold: Option[Float], overwriteExisting: Boolean): Unit = {
     val img: BufferedImage = javax.imageio.ImageIO.read(new FileInputStream(inPath))
     val blockW             = img.getWidth / 16
     val blockH             = img.getHeight / 16
@@ -46,12 +48,17 @@ object OneBitEncoder {
 
       blocks.addOne(makeBlock(rgbs))
     }
-    val out = new FileOutputStream(outPath)
-    try {
-      serialize(blocks.toList, blockW, out)
-      System.out.println("output file saved to:" + outPath)
-    } finally {
-      out.close()
+
+    if (!Paths.get(outPath).toFile.exists() || overwriteExisting) {
+      val out = new FileOutputStream(outPath)
+      try {
+        serialize(blocks.toList, blockW, out)
+        System.out.println("output file saved to:" + outPath)
+      } finally {
+        out.close()
+      }
+    } else {
+      cannotOverwriteExistingFile()
     }
 
   }
@@ -95,7 +102,7 @@ object OneBitEncoder {
       out: OutputStream
   ): Unit = {
     val heightInBlocks = blocks.size / widthInBlocksWord
-    out.write(Array[Byte](widthInBlocksWord.toByte,heightInBlocks.toByte))
+    out.write(Array[Byte](widthInBlocksWord.toByte, heightInBlocks.toByte))
     out.write(blockDescriptorBytes(blocks))
     val expectedBlockDataSize =
       blocks.count(_.isInstanceOf[MixedColorBlock]) * 32 //rough guess at initial byte array size needed

@@ -7,15 +7,22 @@ import com.monovore.decline._
 
 import scala.util.Try
 
-object OneBitCodec {
+case class Config(in: String, out: Option[String], threshold: Option[Float], force: Boolean)
 
-  def time[R](name: Option[String] = None)(block: => R): R = {
+object OneBitCodec {
+  def cannotOverwriteExistingFile(): Unit = {
+    sys.error(
+      "Cannot overwrite existing output file. If you insist on overwriting, run this program with the -f or --force argument."
+    )
+  }
+
+  def time[R](name: String)(block: => R): R = {
     val t0     = System.nanoTime()
-    val result = block // call-by-name
+    val result = block // evaluate block
     val t1     = System.nanoTime()
 
-    val inject = name.fold("")(n => s" of operation [$n]")
-    println(s"Elapsed time$inject: " + (t1 - t0).toDouble / 1000000 + "ms")
+    val ms = (t1 - t0).toDouble / 1000000
+    println(f"Elapsed time of operation [$name]: $ms%.3f ms")
 
     result
   }
@@ -31,39 +38,41 @@ object OneBitCodec {
     .option[String](
       long = "threshold",
       help =
-        "threshold (float|'auto') beyond which a pixel will be considered white. In the range between 0 (all pixels will be considered white) and 1 (all pixels will be considered black)",
+        "threshold (float) above which a pixel will be considered white. In the range between 0 (all pixels will be considered white) and 1 (all pixels will be considered black)",
       short = "t",
       metavar = "threshold",
       visibility = Visibility.Partial
     )
-    .withDefault("0.7")
+    .withDefault("")
 
   private val encodeFlag = flag("encode", "encode the text in file specified", "e").map(_ => encode)
   private val decodeFlag = flag("decode", "decode the text in file specified", "d").map(_ => decode)
+  private val forceFlag  = flag("force", "force-write the output file, overwriting any existing files", "f").orFalse
   private val operation  = encodeFlag orElse decodeFlag
   private def illegalThreshold = sys.error(
-    "Illegal threshold argument. Provide a floating point number in the range 0..1 or use the 'auto' argument"
+    "Illegal threshold argument. Provide a floating point number in the [0..1] range"
   )
 
-  val main: Opts[Unit] = (inFile, operation, outFile, threshold).mapN { (in, operation, out, t) =>
+  val main: Opts[Unit] = (inFile, operation, outFile, threshold, forceFlag).mapN { (in, operation, out, t, force) =>
     val parsedThreshold = Try(t.toFloat).toOption match {
       case Some(value) => if (value >= 0.0f && value <= 1.0f) Some(value) else illegalThreshold
-      case None        => if (t.equalsIgnoreCase("auto")) None else illegalThreshold
+      case None        => if (t.trim.isEmpty) None else illegalThreshold
     }
-    operation(in, out, parsedThreshold)
+    operation(Config(in, out, parsedThreshold, force))
   }
 
-  val encode: (String, Option[String], Option[Float]) => Unit = (in, out, threshold) => {
-    time(Some("encode")) {
-      val inFile  = in.toFile
-      val outPath = out.getOrElse(inFile.parent.path.resolve(inFile.nameWithoutExtension) + ".1bp")
-      OneBitEncoder.encode(in, outPath, threshold)
+  val encode: Config => Unit = conf => {
+    time("encode") {
+      val inFile = conf.in.toFile
+      val outPath =
+        conf.out.getOrElse(inFile.parent.path.resolve(inFile.nameWithoutExtension + ".1bp").toAbsolutePath.toString)
+      OneBitEncoder.encode(conf.in, outPath, conf.threshold, conf.force)
     }
   }
 
-  val decode: (String, Option[String], Option[Float]) => Unit = (in, out, _) =>
-    time(Some("decode")) {
-      OneBitDecoder.decode(in, out)
+  val decode: Config => Unit = conf =>
+    time("decode") {
+      OneBitDecoder.decode(conf.in, conf.out, conf.force)
     }
 }
 

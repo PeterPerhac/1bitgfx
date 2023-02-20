@@ -1,11 +1,12 @@
 package com.perhac.utils.images.onebit
 
 import better.files._
-import com.perhac.utils.images.onebit.OneBitCodec.time
+import com.perhac.utils.images.onebit.OneBitCodec.{cannotOverwriteExistingFile, time}
 
 import java.awt.image.BufferedImage
 import java.awt.{Color, Graphics}
 import java.io.{ByteArrayInputStream, FileInputStream, FileOutputStream, InputStream}
+import java.nio.file.Paths
 import java.util.zip.Inflater
 import javax.imageio.ImageIO
 import scala.annotation.tailrec
@@ -13,7 +14,7 @@ import scala.collection.mutable.ArrayBuffer
 
 object OneBitDecoder {
 
-  def decode(inPath: String, outPath: Option[String]): Unit = {
+  def decode(inPath: String, outPath: Option[String], overwriteExisting: Boolean): Unit = {
     val input: InputStream = new FileInputStream(inPath)
 
     val blockW: Int        = input.read()
@@ -34,14 +35,18 @@ object OneBitDecoder {
     val outFilePath =
       outPath.getOrElse(inFile.parent.path.resolve(inFile.nameWithoutExtension + ".png").toAbsolutePath.toString)
 
-    val outStream = new FileOutputStream(outFilePath)
-    try {
-      time(Some("write image to output")) {
-        ImageIO.write(img, "PNG", outStream)
-        System.out.println("output file saved to:" + outFilePath)
+    if (!Paths.get(outFilePath).toFile.exists() || overwriteExisting) {
+      val outStream = new FileOutputStream(outFilePath)
+      try {
+        time("write image to output") {
+          ImageIO.write(img, "PNG", outStream)
+          System.out.println("output file saved to:" + outFilePath)
+        }
+      } finally {
+        outStream.close()
       }
-    } finally {
-      outStream.close()
+    } else {
+      cannotOverwriteExistingFile()
     }
   }
 
