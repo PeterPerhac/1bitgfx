@@ -11,9 +11,10 @@ case class Config(in: String, out: Option[String], threshold: Option[Float], for
 
 object OneBitCodec {
   def cannotOverwriteExistingFile(): Unit = {
-    sys.error(
+    System.err.println(
       "Cannot overwrite existing output file. If you insist on overwriting, run this program with the -f or --force argument."
     )
+    sys.exit(1)
   }
 
   def time[R](name: String)(block: => R): R = {
@@ -49,9 +50,11 @@ object OneBitCodec {
   private val decodeFlag = flag("decode", "decode the text in file specified", "d").map(_ => decode)
   private val forceFlag  = flag("force", "force-write the output file, overwriting any existing files", "f").orFalse
   private val operation  = encodeFlag orElse decodeFlag
-  private def illegalThreshold = sys.error(
-    "Illegal threshold argument. Provide a floating point number in the [0..1] range"
-  )
+
+  private def illegalThreshold = {
+    System.err.println("Illegal threshold argument. Provide a floating point number in the [0..1] range")
+    sys.exit(2)
+  }
 
   val main: Opts[Unit] = (inFile, operation, outFile, threshold, forceFlag).mapN { (in, operation, out, t, force) =>
     val parsedThreshold = Try(t.toFloat).toOption match {
@@ -70,10 +73,7 @@ object OneBitCodec {
     }
   }
 
-  val decode: Config => Unit = conf =>
-    time("decode") {
-      OneBitDecoder.decode(conf.in, conf.out, conf.force)
-    }
+  val decode: Config => Unit = conf => time("decode") { OneBitDecoder.decode(conf.in, conf.out, conf.force) }
 }
 
 object OneBitCodecApp
