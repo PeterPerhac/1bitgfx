@@ -113,16 +113,6 @@ object OneBitDecoder {
         paintLengths(gfx, block, ls, initialColorWhite = false)
     }
 
-  def decompressBlockData(compressedInput: InputStream): InputStream = {
-    val inflater: Inflater = new Inflater()
-    val compressedBytes    = compressedInput.readAllBytes()
-    inflater.setInput(compressedBytes)
-    val decompressedData: Array[Byte] = new Array(compressedBytes.length * 5)
-    val inflatedByteCount             = inflater.inflate(decompressedData)
-    inflater.end()
-    new ByteArrayInputStream(decompressedData, 0, inflatedByteCount)
-  }
-
   private def addLengths(
       blocksWithCoordinates: List[BlockWithCoordinates],
       input: InputStream
@@ -135,15 +125,29 @@ object OneBitDecoder {
       if (read + length < 256) readBlockData(stream, builder, read + length)
     }
 
+    def decompressBlockData(compressedInput: InputStream): InputStream = {
+      val inflater: Inflater = new Inflater()
+      val compressedBytes    = compressedInput.readAllBytes()
+      inflater.setInput(compressedBytes)
+      val decompressedData: Array[Byte] = new Array(compressedBytes.length * 5)
+      val inflatedByteCount             = inflater.inflate(decompressedData)
+      inflater.end()
+      new ByteArrayInputStream(decompressedData, 0, inflatedByteCount)
+    }
+
     val blockData: InputStream = decompressBlockData(input)
 
-    blocksWithCoordinates.map({
-      case b @ BlockWithCoordinates(mcb: MixedColorBlock, _, _) =>
-        val blockBuilder = new MixedColorBlockBuilder(mcb.firstColor)
-        readBlockData(blockData, blockBuilder, 0)
-        b.copy(block = blockBuilder.build())
-      case b => b
-    })
+    try {
+      blocksWithCoordinates.map {
+        case b @ BlockWithCoordinates(mcb: MixedColorBlock, _, _) =>
+          val blockBuilder = new MixedColorBlockBuilder(mcb.firstColor)
+          readBlockData(blockData, blockBuilder, 0)
+          b.copy(block = blockBuilder.build())
+        case b => b
+      }
+    } finally {
+      blockData.close()
+    }
   }
 
 }

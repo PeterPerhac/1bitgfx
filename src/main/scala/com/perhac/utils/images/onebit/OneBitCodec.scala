@@ -46,10 +46,12 @@ object OneBitCodec {
     )
     .withDefault("")
 
-  private val encodeFlag = flag("encode", "encode the text in file specified", "e").map(_ => encode)
-  private val decodeFlag = flag("decode", "decode the text in file specified", "d").map(_ => decode)
-  private val forceFlag  = flag("force", "force-write the output file, overwriting any existing files", "f").orFalse
-  private val operation  = encodeFlag orElse decodeFlag
+  private val encodeFlag   = flag("encode", "encode the input image file as 1bp (1 bit picture)", "e").map(_ => encode)
+  private val decodeFlag   = flag("decode", "decode the input 1 bit picture file into PNG format", "d").map(_ => decode)
+  private val recordFlag   = flag("record", "record from webcam into an animated 1bp file", "d").map(_ => record)
+  private val playbackFlag = flag("playback", "play back recorded 1bp animation", "p").map(_ => playback)
+  private val forceFlag    = flag("force", "force-write the output file, overwriting any existing files", "f").orFalse
+  private val operation    = encodeFlag orElse decodeFlag
 
   private def illegalThreshold = {
     System.err.println("Illegal threshold argument. Provide a floating point number in the [0..1] range")
@@ -61,15 +63,24 @@ object OneBitCodec {
       case Some(value) => if (value >= 0.0f && value <= 1.0f) Some(value) else illegalThreshold
       case None        => if (t.trim.isEmpty) None else illegalThreshold
     }
+
+//    val grabber = new OpenCVFrameGrabber(0)
+//    grabber.start()
+//    val paintConverter = new Java2DFrameConverter()
+//    val selfie: BufferedImage = paintConverter.convert(grabber.grab())
+//    ImageIO.write(selfie, "JPG", Paths.get("selfie.jpg").toFile)
+
     operation(Config(in, out, parsedThreshold, force))
   }
 
+  val record: Config => Unit   = conf => {}
+  val playback: Config => Unit = conf => {}
   val encode: Config => Unit = conf => {
     time("encode") {
       val inFile = conf.in.toFile
       val outPath =
         conf.out.getOrElse(inFile.parent.path.resolve(inFile.nameWithoutExtension + ".1bp").toAbsolutePath.toString)
-      OneBitEncoder.encode(conf.in, outPath, conf.threshold, conf.force)
+      OneBitEncoder.encodeSingleFile(conf.in, outPath, conf.threshold, conf.force)
     }
   }
 

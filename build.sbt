@@ -10,5 +10,6 @@ lazy val root = (project in file("."))
   )
 
 ThisBuild / scalacOptions ++= Seq("-unchecked", "-deprecation", "-feature")
-libraryDependencies += "com.github.pathikrit" %% "better-files" % "3.9.1"
-libraryDependencies += "com.monovore"         %% "decline"      % "2.2.0"
+libraryDependencies += "com.github.pathikrit" %% "better-files"    % "3.9.1"
+libraryDependencies += "com.monovore"         %% "decline"         % "2.2.0"
+libraryDependencies += "org.bytedeco"          % "javacv-platform" % "1.5.8"
