@@ -2,10 +2,12 @@ package com.perhac.utils.images.onebit
 
 import better.files._
 import com.perhac.utils.images.onebit.OneBitCodec.{cannotOverwriteExistingFile, time}
+import com.perhac.utils.images.onebit.animation.AnimationConfig
 
 import java.awt.image.BufferedImage
 import java.awt.{Color, Graphics}
 import java.io.{ByteArrayInputStream, FileInputStream, FileOutputStream, InputStream}
+import java.nio.ByteBuffer
 import java.nio.file.Paths
 import java.util.zip.Inflater
 import javax.imageio.ImageIO
@@ -15,8 +17,9 @@ import scala.collection.mutable.ArrayBuffer
 object OneBitDecoder {
 
   def decode(inPath: String, outPath: Option[String], overwriteExisting: Boolean): Unit = {
-    val input: InputStream = new FileInputStream(inPath)
-
+    val input: InputStream               = new FileInputStream(inPath)
+    val animationConfig: AnimationConfig = AnimationConfig.fromByte(input.read().toByte)
+    println(animationConfig)
     val blockW: Int        = input.read()
     val blockH: Int        = input.read()
     val imgW: Int          = blockW * 16
@@ -50,10 +53,6 @@ object OneBitDecoder {
     }
   }
 
-  private case class BlockWithCoordinates(block: Block, colIdx: Int, rowIdx: Int) {
-    override def toString: String = s"${block.toString} at [$colIdx, $rowIdx]"
-  }
-
   def unpack(bytes: Array[Byte]): List[Block] = {
     val buf: ArrayBuffer[Block] = new ArrayBuffer[Block](bytes.length * 4) //4 descriptors per byte
     bytes.foreach { b =>
@@ -65,7 +64,7 @@ object OneBitDecoder {
     buf.toList
   }
 
-  private def resolveCoordinates(blockDescriptors: List[Block], blockW: Int): List[BlockWithCoordinates] = {
+  def resolveCoordinates(blockDescriptors: List[Block], blockW: Int): List[BlockWithCoordinates] = {
     def coordinatesByIndex(i: Int): (Int, Int) =
       i % blockW -> i / blockW
 
@@ -99,7 +98,7 @@ object OneBitDecoder {
     doPaint(ls, initialColorWhite, 0)
   }
 
-  private def paintBlock(gfx: Graphics)(block: BlockWithCoordinates): Unit =
+  def paintBlock(gfx: Graphics)(block: BlockWithCoordinates): Unit =
     block.block match {
       case WhiteBlock =>
         gfx.setColor(Color.WHITE)
@@ -113,7 +112,7 @@ object OneBitDecoder {
         paintLengths(gfx, block, ls, initialColorWhite = false)
     }
 
-  private def addLengths(
+  def addLengths(
       blocksWithCoordinates: List[BlockWithCoordinates],
       input: InputStream
   ): List[BlockWithCoordinates] = {
@@ -125,9 +124,10 @@ object OneBitDecoder {
       if (read + length < 256) readBlockData(stream, builder, read + length)
     }
 
-    def decompressBlockData(compressedInput: InputStream): InputStream = {
+    def decompressBlockData(compressedInput: InputStream, byteCount: Int): InputStream = {
       val inflater: Inflater = new Inflater()
-      val compressedBytes    = compressedInput.readAllBytes()
+      val compressedBytes =
+        compressedInput.readNBytes(byteCount + 1) //THIS magic +1 makes it all work but I don't know why
       inflater.setInput(compressedBytes)
       val decompressedData: Array[Byte] = new Array(compressedBytes.length * 5)
       val inflatedByteCount             = inflater.inflate(decompressedData)
@@ -135,7 +135,10 @@ object OneBitDecoder {
       new ByteArrayInputStream(decompressedData, 0, inflatedByteCount)
     }
 
-    val blockData: InputStream = decompressBlockData(input)
+    val byteCountArray = new Array[Byte](4)
+    input.read(byteCountArray)
+    val dataBytesCount         = ByteBuffer.wrap(byteCountArray).getInt
+    val blockData: InputStream = decompressBlockData(input, dataBytesCount)
 
     try {
       blocksWithCoordinates.map {

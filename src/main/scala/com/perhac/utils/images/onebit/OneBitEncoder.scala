@@ -2,15 +2,22 @@ package com.perhac.utils.images.onebit
 
 import com.perhac.utils.images.onebit.BlockColor.fromAwtColor
 import com.perhac.utils.images.onebit.OneBitCodec.cannotOverwriteExistingFile
+import com.perhac.utils.images.onebit.animation.Loop
+import org.bytedeco.javacv.{Java2DFrameConverter, OpenCVFrameGrabber}
 
 import java.awt.Color
 import java.awt.image.BufferedImage
 import java.io.{ByteArrayOutputStream, FileInputStream, FileOutputStream, OutputStream}
+import java.nio.ByteBuffer
 import java.nio.file.Paths
+import java.util.concurrent.TimeoutException
 import java.util.zip.Deflater
 import javax.imageio.ImageIO
 import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
+import scala.concurrent.{Await, Future}
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.duration._
 
 object OneBitEncoder {
 
@@ -30,10 +37,43 @@ object OneBitEncoder {
     midpoint
   }
 
+  def record(outPath: String, threshold: Option[Float], overwriteExisting: Boolean): Unit = {
+    val grabber = new OpenCVFrameGrabber(0)
+    println("Starting Webcam...")
+    val futureGrabberResult = Future { grabber.start() }
+    try {
+      Await.ready(futureGrabberResult, 5.seconds)
+    } catch {
+      case _: TimeoutException =>
+        System.err.println("Reached 5s timeout while waiting for Webcam to initialise")
+        sys.exit(3)
+    }
+    println("Webcam started.")
+    val paintConverter = new Java2DFrameConverter()
+    if (!Paths.get(outPath).toFile.exists() || overwriteExisting) {
+      val out = new FileOutputStream(outPath)
+      try {
+        var frameNo: Int = 0
+        do {
+          frameNo = frameNo + 1
+          out.write(Array[Byte](Loop.atFps(32)))
+          val img = ImageUtils.resize(paintConverter.convert(grabber.grab()), 768, 480)
+          encodeImage(img, threshold, out, frameNo == 1)
+          println(s"$frameNo of 500")
+        } while (!Thread.interrupted())
+      } finally {
+        out.close()
+      }
+    } else {
+      cannotOverwriteExistingFile()
+    }
+  }
+
   def encodeSingleFile(inPath: String, outPath: String, threshold: Option[Float], overwriteExisting: Boolean): Unit = {
     if (!Paths.get(outPath).toFile.exists() || overwriteExisting) {
       val out = new FileOutputStream(outPath)
       try {
+        out.write(Array[Byte](0.toByte)) //animation byte, just a zero if no animation
         encodeImage(ImageIO.read(new FileInputStream(inPath)), threshold, out)
         System.out.println("output file saved to:" + outPath)
       } finally {
@@ -44,13 +84,18 @@ object OneBitEncoder {
     }
   }
 
-  private def encodeImage(img: BufferedImage, threshold: Option[Float], out: OutputStream): Unit = {
+  private def encodeImage(
+      img: BufferedImage,
+      threshold: Option[Float],
+      out: OutputStream,
+      firstInSequence: Boolean = true
+  ): Unit = {
     val blocks = imageToBlocks(img, threshold)
-    val blockW = img.getWidth / 16
-    val blockH = blocks.size / blockW
-    out.write(
-      Array[Byte](blockW.toByte, blockH.toByte)
-    ) //width and height to be written to OUT only for the first image in the file
+    if (firstInSequence) { // width and height to be written to OUT only for the first image in the file
+      val blockW = img.getWidth / 16
+      val blockH = blocks.size / blockW
+      out.write(Array[Byte](blockW.toByte, blockH.toByte))
+    }
     serialize(blocks, out)
   }
 
@@ -126,9 +171,10 @@ object OneBitEncoder {
     val compressor: Deflater = new Deflater()
     compressor.setInput(blockData.toByteArray)
     compressor.finish()
-    val deflatedBytes = compressor.deflate(output)
+    val deflatedBytesCount = compressor.deflate(output)
     compressor.end()
-    out.write(output, 0, deflatedBytes)
+    out.write(ByteBuffer.allocate(4).putInt(deflatedBytesCount).array())
+    out.write(output, 0, deflatedBytesCount)
   }
 
 }

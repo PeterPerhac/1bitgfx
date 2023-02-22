@@ -47,3 +47,7 @@ object BlockColor {
     if (color.getRGBColorComponents(null).sum > (3 * midPoint)) White else Black
   }
 }
+
+case class BlockWithCoordinates(block: Block, colIdx: Int, rowIdx: Int) {
+  override def toString: String = s"${block.toString} at [$colIdx, $rowIdx]"
+}

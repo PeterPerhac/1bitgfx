@@ -4,6 +4,7 @@ import better.files._
 import cats.implicits._
 import com.monovore.decline.Opts.{argument, flag}
 import com.monovore.decline._
+import com.perhac.utils.images.onebit.animation.AnimationPlayer
 
 import scala.util.Try
 
@@ -28,7 +29,7 @@ object OneBitCodec {
     result
   }
 
-  private val inFile = argument[String]("in")
+  private val inFile: Opts[String] = argument[String]("in")
 
   private val outFile =
     Opts
@@ -48,10 +49,10 @@ object OneBitCodec {
 
   private val encodeFlag   = flag("encode", "encode the input image file as 1bp (1 bit picture)", "e").map(_ => encode)
   private val decodeFlag   = flag("decode", "decode the input 1 bit picture file into PNG format", "d").map(_ => decode)
-  private val recordFlag   = flag("record", "record from webcam into an animated 1bp file", "d").map(_ => record)
+  private val recordFlag   = flag("record", "record from webcam into an animated 1bp file", "r").map(_ => record)
   private val playbackFlag = flag("playback", "play back recorded 1bp animation", "p").map(_ => playback)
   private val forceFlag    = flag("force", "force-write the output file, overwriting any existing files", "f").orFalse
-  private val operation    = encodeFlag orElse decodeFlag
+  private val operation    = encodeFlag orElse decodeFlag orElse recordFlag orElse playbackFlag
 
   private def illegalThreshold = {
     System.err.println("Illegal threshold argument. Provide a floating point number in the [0..1] range")
@@ -64,17 +65,18 @@ object OneBitCodec {
       case None        => if (t.trim.isEmpty) None else illegalThreshold
     }
 
-//    val grabber = new OpenCVFrameGrabber(0)
-//    grabber.start()
-//    val paintConverter = new Java2DFrameConverter()
-//    val selfie: BufferedImage = paintConverter.convert(grabber.grab())
-//    ImageIO.write(selfie, "JPG", Paths.get("selfie.jpg").toFile)
-
     operation(Config(in, out, parsedThreshold, force))
   }
 
-  val record: Config => Unit   = conf => {}
-  val playback: Config => Unit = conf => {}
+  val record: Config => Unit = conf => {
+    val outPath = conf.out.getOrElse("recording.1bp")
+    OneBitEncoder.record(outPath, conf.threshold, conf.force)
+  }
+
+  val playback: Config => Unit = conf => {
+    AnimationPlayer.play(conf.in)
+  }
+
   val encode: Config => Unit = conf => {
     time("encode") {
       val inFile = conf.in.toFile
