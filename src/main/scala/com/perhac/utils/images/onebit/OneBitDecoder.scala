@@ -6,8 +6,7 @@ import com.perhac.utils.images.onebit.animation.AnimationConfig
 
 import java.awt.image.BufferedImage
 import java.awt.{Color, Graphics}
-import java.io.{ByteArrayInputStream, FileInputStream, FileOutputStream, InputStream}
-import java.nio.ByteBuffer
+import java.io.{ByteArrayInputStream, DataInputStream, FileInputStream, FileOutputStream}
 import java.nio.file.Paths
 import java.util.zip.Inflater
 import javax.imageio.ImageIO
@@ -17,20 +16,19 @@ import scala.collection.mutable.ArrayBuffer
 object OneBitDecoder {
 
   def decode(inPath: String, outPath: Option[String], overwriteExisting: Boolean): Unit = {
-    val input: InputStream               = new FileInputStream(inPath)
+    val input: DataInputStream           = new DataInputStream(new FileInputStream(inPath))
     val animationConfig: AnimationConfig = AnimationConfig.fromByte(input.read().toByte)
-    println(animationConfig)
-    val blockW: Int        = input.read()
-    val blockH: Int        = input.read()
-    val imgW: Int          = blockW * 16
-    val imgH: Int          = blockH * 16
-    val img: BufferedImage = new BufferedImage(imgW, imgH, BufferedImage.TYPE_INT_RGB)
-    val gfx: Graphics      = img.getGraphics
+    val blockW: Int                      = input.read()
+    val blockH: Int                      = input.read()
+    val imgW: Int                        = blockW * 16
+    val imgH: Int                        = blockH * 16
+    val img: BufferedImage               = new BufferedImage(imgW, imgH, BufferedImage.TYPE_INT_RGB)
+    val gfx: Graphics                    = img.getGraphics
 
-    val blockDescriptorBytes: Array[Byte] = input.readNBytes(Math.ceil((blockW * blockH).toDouble / 4).toInt)
-    val blockDescriptors: List[Block]     = unpack(blockDescriptorBytes)
-    val blocksWithCoordinates             = resolveCoordinates(blockDescriptors, blockW)
-    val readyToPaintBlocks                = addLengths(blocksWithCoordinates, input)
+    val blockDescriptorBytes: Array[Byte]    = input.readNBytes(Math.ceil((blockW * blockH).toDouble / 4).toInt)
+    val blockDescriptors: ArrayBuffer[Block] = unpack(blockDescriptorBytes)
+    val blocksWithCoordinates                = resolveCoordinates(blockDescriptors, blockW)
+    val readyToPaintBlocks                   = addLengths(blocksWithCoordinates, input)
     readyToPaintBlocks.foreach(paintBlock(gfx))
     gfx.dispose()
 
@@ -53,7 +51,7 @@ object OneBitDecoder {
     }
   }
 
-  def unpack(bytes: Array[Byte]): List[Block] = {
+  def unpack(bytes: Array[Byte]): ArrayBuffer[Block] = {
     val buf: ArrayBuffer[Block] = new ArrayBuffer[Block](bytes.length * 4) //4 descriptors per byte
     bytes.foreach { b =>
       buf.addOne(Block.fromDescriptor(((b & 0xc0) >>> 6).toByte))
@@ -61,10 +59,10 @@ object OneBitDecoder {
       buf.addOne(Block.fromDescriptor(((b & 0xc) >>> 2).toByte))
       buf.addOne(Block.fromDescriptor((b & 0x3).toByte))
     }
-    buf.toList
+    buf
   }
 
-  def resolveCoordinates(blockDescriptors: List[Block], blockW: Int): List[BlockWithCoordinates] = {
+  def resolveCoordinates(blockDescriptors: ArrayBuffer[Block], blockW: Int): ArrayBuffer[BlockWithCoordinates] = {
     def coordinatesByIndex(i: Int): (Int, Int) =
       i % blockW -> i / blockW
 
@@ -77,11 +75,11 @@ object OneBitDecoder {
   def paintLengths(
       gfx: Graphics,
       b: BlockWithCoordinates,
-      ls: List[Int],
+      ls: ArrayBuffer[Int],
       initialColorWhite: Boolean
   ): Unit = {
-    def coords(ridx: Int, cidx: Int, painted: Int, count: Int): List[(Int, Int)] =
-      (painted until (painted + count)).toList.map(idx => (cidx * 16 + (idx % 16)) -> (ridx * 16 + (idx / 16)))
+    def coords(ridx: Int, cidx: Int, painted: Int, count: Int): IndexedSeq[(Int, Int)] =
+      (painted until (painted + count)).map(idx => (cidx * 16 + (idx % 16)) -> (ridx * 16 + (idx / 16)))
 
     @tailrec
     def doPaint(lengths: List[Int], white: Boolean, painted: Int): Unit =
@@ -95,7 +93,7 @@ object OneBitDecoder {
         case Nil => if (painted != 256) sys.error("expected to paint full 256 pixels of a 16x16 block")
       }
 
-    doPaint(ls, initialColorWhite, 0)
+    doPaint(ls.toList, initialColorWhite, 0)
   }
 
   def paintBlock(gfx: Graphics)(block: BlockWithCoordinates): Unit =
@@ -113,18 +111,18 @@ object OneBitDecoder {
     }
 
   def addLengths(
-      blocksWithCoordinates: List[BlockWithCoordinates],
-      input: InputStream
-  ): List[BlockWithCoordinates] = {
+      blocksWithCoordinates: ArrayBuffer[BlockWithCoordinates],
+      input: DataInputStream
+  ): ArrayBuffer[BlockWithCoordinates] = {
     @tailrec
-    def readBlockData(stream: InputStream, builder: MixedColorBlockBuilder, read: Int): Unit = {
+    def readBlockData(stream: ByteArrayInputStream, builder: MixedColorBlockBuilder, read: Int): Unit = {
       val length: Int = stream.read()
       if (length < 0) throw new RuntimeException("End of stream!")
       builder.addLength(length)
       if (read + length < 256) readBlockData(stream, builder, read + length)
     }
 
-    def decompressBlockData(compressedInput: InputStream, byteCount: Int): InputStream = {
+    def decompressBlockData(compressedInput: DataInputStream, byteCount: Int): ByteArrayInputStream = {
       val inflater: Inflater = new Inflater()
       val compressedBytes =
         compressedInput.readNBytes(byteCount + 1) //THIS magic +1 makes it all work but I don't know why
@@ -135,10 +133,8 @@ object OneBitDecoder {
       new ByteArrayInputStream(decompressedData, 0, inflatedByteCount)
     }
 
-    val byteCountArray = new Array[Byte](4)
-    input.read(byteCountArray)
-    val dataBytesCount         = ByteBuffer.wrap(byteCountArray).getInt
-    val blockData: InputStream = decompressBlockData(input, dataBytesCount)
+    val dataBytesCount                  = input.readInt()
+    val blockData: ByteArrayInputStream = decompressBlockData(input, dataBytesCount)
 
     try {
       blocksWithCoordinates.map {

@@ -1,6 +1,7 @@
 package com.perhac.utils.images.onebit
 
 import java.awt.Color
+import scala.collection.mutable.ArrayBuffer
 
 sealed trait Block {
   def descriptor: Byte
@@ -11,8 +12,8 @@ object Block {
     desc match {
       case 0x03 => WhiteBlock
       case 0x00 => BlackBlock
-      case 0x02 => WhiteBlackBlock(List.empty)
-      case 0x01 => BlackWhiteBlock(List.empty)
+      case 0x02 => WhiteBlackBlock(ArrayBuffer.empty)
+      case 0x01 => BlackWhiteBlock(ArrayBuffer.empty)
     }
 }
 
@@ -24,15 +25,15 @@ case object BlackBlock extends Block {
 }
 
 sealed trait MixedColorBlock extends Block {
-  def lengths: List[Int]
+  def lengths: ArrayBuffer[Int]
   def firstColor: BlockColor
 }
 
-case class WhiteBlackBlock(lengths: List[Int]) extends MixedColorBlock {
+case class WhiteBlackBlock(lengths: ArrayBuffer[Int]) extends MixedColorBlock {
   override val descriptor: Byte       = 0x02.toByte
   override val firstColor: BlockColor = White
 }
-case class BlackWhiteBlock(lengths: List[Int]) extends MixedColorBlock {
+case class BlackWhiteBlock(lengths: ArrayBuffer[Int]) extends MixedColorBlock {
   override val descriptor: Byte       = 0x01.toByte
   override val firstColor: BlockColor = Black
 }

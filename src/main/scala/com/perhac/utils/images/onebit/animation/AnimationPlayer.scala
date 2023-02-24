@@ -6,37 +6,38 @@ import org.bytedeco.javacv.CanvasFrame
 import java.awt.Graphics
 import java.awt.event.WindowEvent
 import java.awt.image.BufferedImage
-import java.io.FileInputStream
+import java.io.{DataInputStream, FileInputStream}
 import java.nio.file.Paths
 import javax.swing.WindowConstants
+import scala.collection.mutable.ArrayBuffer
 
 object AnimationPlayer {
 
   def play(inPath: String): Unit = {
 
-    val input = new FileInputStream(Paths.get(inPath).toFile)
+    val input = new DataInputStream(new FileInputStream(Paths.get(inPath).toFile))
     try {
       val animationConfig: AnimationConfig = AnimationConfig.fromByte(input.read().toByte)
-      println(animationConfig)
-      val blockW: Int        = input.read()
-      val blockH: Int        = input.read()
-      val imgW: Int          = blockW * 16
-      val imgH: Int          = blockH * 16
-      val img: BufferedImage = new BufferedImage(imgW, imgH, BufferedImage.TYPE_INT_RGB)
-      val gfx: Graphics      = img.getGraphics
+      val blockW: Int                      = input.read()
+      val blockH: Int                      = input.read()
+      val imgW: Int                        = blockW * 16
+      val imgH: Int                        = blockH * 16
+      val img: BufferedImage               = new BufferedImage(imgW, imgH, BufferedImage.TYPE_INT_RGB)
+      val gfx: Graphics                    = img.getGraphics
 
       val canvas = new CanvasFrame("1 Bit Animation Player")
       canvas.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE)
 
+      var startT: Long = 0L
       do {
-        val blockDescriptorBytes: Array[Byte] = input.readNBytes(Math.ceil((blockW * blockH).toDouble / 4).toInt)
-        val blockDescriptors: List[Block]     = OneBitDecoder.unpack(blockDescriptorBytes)
-        val blocksWithCoordinates             = OneBitDecoder.resolveCoordinates(blockDescriptors, blockW)
-        val readyToPaintBlocks                = OneBitDecoder.addLengths(blocksWithCoordinates, input)
+        Thread.sleep(Math.max(0L, (1000 / animationConfig.fps).toLong - (System.currentTimeMillis() - startT)))
+        val blockDescriptorBytes: Array[Byte]    = input.readNBytes(Math.ceil((blockW * blockH).toDouble / 4).toInt)
+        val blockDescriptors: ArrayBuffer[Block] = OneBitDecoder.unpack(blockDescriptorBytes)
+        val blocksWithCoordinates                = OneBitDecoder.resolveCoordinates(blockDescriptors, blockW)
+        val readyToPaintBlocks                   = OneBitDecoder.addLengths(blocksWithCoordinates, input)
         readyToPaintBlocks.foreach(OneBitDecoder.paintBlock(gfx))
         canvas.showImage(img)
-        Thread.sleep(1000 / animationConfig.fps)
-
+        startT = System.currentTimeMillis()
       } while (input.available() > 0)
 
       canvas.dispatchEvent(new WindowEvent(canvas, WindowEvent.WINDOW_CLOSING))

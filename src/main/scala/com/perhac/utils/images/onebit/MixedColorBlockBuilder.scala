@@ -12,8 +12,8 @@ class MixedColorBlockBuilder(firstLengthColor: BlockColor) {
   }
 
   def build(): MixedColorBlock = this.firstLengthColor match {
-    case Black => BlackWhiteBlock(lengthBuffer.toList)
-    case White => WhiteBlackBlock(lengthBuffer.toList)
+    case Black => BlackWhiteBlock(lengthBuffer)
+    case White => WhiteBlackBlock(lengthBuffer)
   }
 
 }

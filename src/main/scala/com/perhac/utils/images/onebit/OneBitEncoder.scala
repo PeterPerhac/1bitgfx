@@ -7,17 +7,16 @@ import org.bytedeco.javacv.{Java2DFrameConverter, OpenCVFrameGrabber}
 
 import java.awt.Color
 import java.awt.image.BufferedImage
-import java.io.{ByteArrayOutputStream, FileInputStream, FileOutputStream, OutputStream}
-import java.nio.ByteBuffer
+import java.io.{ByteArrayOutputStream, DataOutputStream, FileInputStream, FileOutputStream}
 import java.nio.file.Paths
 import java.util.concurrent.TimeoutException
 import java.util.zip.Deflater
 import javax.imageio.ImageIO
 import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
-import scala.concurrent.{Await, Future}
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
 
 object OneBitEncoder {
 
@@ -32,9 +31,7 @@ object OneBitEncoder {
       val blue  = clr & 0x000000ff
       (red + green + blue).toFloat / (3 * 256)
     }
-    val midpoint = averages.toList.sum / averages.size
-    System.out.println("auto threshold: " + midpoint)
-    midpoint
+    averages.sum / averages.size
   }
 
   def record(outPath: String, threshold: Option[Float], overwriteExisting: Boolean): Unit = {
@@ -48,18 +45,17 @@ object OneBitEncoder {
         System.err.println("Reached 5s timeout while waiting for Webcam to initialise")
         sys.exit(3)
     }
-    println("Webcam started.")
     val paintConverter = new Java2DFrameConverter()
     if (!Paths.get(outPath).toFile.exists() || overwriteExisting) {
-      val out = new FileOutputStream(outPath)
+      val out = new DataOutputStream(new FileOutputStream(outPath))
       try {
         var frameNo: Int = 0
         do {
           frameNo = frameNo + 1
           out.write(Array[Byte](Loop.atFps(32)))
-          val img = ImageUtils.resize(paintConverter.convert(grabber.grab()), 768, 480)
+          val img = ImageUtils.resize(paintConverter.convert(grabber.grab()), 576, 360)
           encodeImage(img, threshold, out, frameNo == 1)
-          println(s"$frameNo of 500")
+          print(f"\rrecorded frames: $frameNo%d (estimated ${frameNo.toDouble / 32}%2.2fs)")
         } while (!Thread.interrupted())
       } finally {
         out.close()
@@ -71,7 +67,7 @@ object OneBitEncoder {
 
   def encodeSingleFile(inPath: String, outPath: String, threshold: Option[Float], overwriteExisting: Boolean): Unit = {
     if (!Paths.get(outPath).toFile.exists() || overwriteExisting) {
-      val out = new FileOutputStream(outPath)
+      val out = new DataOutputStream(new FileOutputStream(outPath))
       try {
         out.write(Array[Byte](0.toByte)) //animation byte, just a zero if no animation
         encodeImage(ImageIO.read(new FileInputStream(inPath)), threshold, out)
@@ -87,7 +83,7 @@ object OneBitEncoder {
   private def encodeImage(
       img: BufferedImage,
       threshold: Option[Float],
-      out: OutputStream,
+      out: DataOutputStream,
       firstInSequence: Boolean = true
   ): Unit = {
     val blocks = imageToBlocks(img, threshold)
@@ -99,7 +95,7 @@ object OneBitEncoder {
     serialize(blocks, out)
   }
 
-  private def imageToBlocks(img: BufferedImage, threshold: Option[Float]): List[Block] = {
+  private def imageToBlocks(img: BufferedImage, threshold: Option[Float]): ArrayBuffer[Block] = {
     val blockW = img.getWidth / 16
     val blockH = img.getHeight / 16
 
@@ -108,8 +104,8 @@ object OneBitEncoder {
     //for each block (16x16 rectangle within the picture)
     for (rowIdx <- 0 until blockH; colIdx <- 0 until blockW) {
       val rgbs = for {
-        y <- (0 to 15).toList
-        x <- (0 to 15).toList
+        y <- 0 to 15
+        x <- 0 to 15
       } yield fromAwtColor(
         color = new Color(img.getRGB(colIdx * 16 + x, rowIdx * 16 + y)),
         midPoint = midpoint
@@ -117,19 +113,19 @@ object OneBitEncoder {
 
       blocks.addOne(makeBlock(rgbs))
     }
-    blocks.toList
+    blocks
   }
 
-  private def makeBlock(pixels: List[BlockColor]): Block = {
+  private def makeBlock(pixels: IndexedSeq[BlockColor]): Block = {
     @tailrec
     def processBlock(
-        pixels: List[BlockColor],
+        pixels: IndexedSeq[BlockColor],
         builder: MixedColorBlockBuilder
     ): MixedColorBlockBuilder =
-      pixels match {
-        case h :: _ => processBlock(pixels.dropWhile(_ == h), builder.addLength(pixels.takeWhile(_ == h).size))
-        case Nil    => builder
-      }
+      if (pixels.nonEmpty) {
+        val firstElement = pixels.head
+        processBlock(pixels.dropWhile(_ == firstElement), builder.addLength(pixels.takeWhile(_ == firstElement).size))
+      } else builder
 
     if (pixels.forall(_ == White)) { //all white
       WhiteBlock
@@ -141,14 +137,14 @@ object OneBitEncoder {
   }
 
   private def serialize(
-      blocks: List[Block],
-      out: OutputStream
+      blocks: ArrayBuffer[Block],
+      out: DataOutputStream
   ): Unit = {
     def blockDescriptorBytes: Array[Byte] =
       blocks
         .map(_.descriptor)
         .grouped(4)
-        .map({
+        .map(_.toList match {
           case one :: two :: three :: four :: Nil => (one << 6 | two << 4 | three << 2 | four).toByte
           case one :: two :: three :: Nil         => (one << 6 | two << 4 | three << 2).toByte
           case one :: two :: Nil                  => (one << 6 | two << 4).toByte
@@ -159,9 +155,7 @@ object OneBitEncoder {
         .toArray
 
     out.write(blockDescriptorBytes)
-    val expectedBlockDataSize =
-      blocks.count(_.isInstanceOf[MixedColorBlock]) * 32 //rough guess at initial byte array size needed
-    val blockData: ByteArrayOutputStream = new ByteArrayOutputStream(expectedBlockDataSize)
+    val blockData: ByteArrayOutputStream = new ByteArrayOutputStream(1024)
     blocks.foreach {
       case block: MixedColorBlock =>
         blockData.write(block.lengths.map(_.toByte).toArray)
@@ -173,8 +167,8 @@ object OneBitEncoder {
     compressor.finish()
     val deflatedBytesCount = compressor.deflate(output)
     compressor.end()
-    out.write(ByteBuffer.allocate(4).putInt(deflatedBytesCount).array())
-    out.write(output, 0, deflatedBytesCount)
+    out.writeInt(deflatedBytesCount)         //writes the NUMBER of bytes in the data block
+    out.write(output, 0, deflatedBytesCount) //writes the data block itself
   }
 
 }
