@@ -2,11 +2,10 @@ package com.perhac.utils.images.onebit
 
 import better.files._
 import com.perhac.utils.images.onebit.OneBitCodec.{cannotOverwriteExistingFile, time}
-import com.perhac.utils.images.onebit.animation.AnimationConfig
 
 import java.awt.image.BufferedImage
 import java.awt.{Color, Graphics}
-import java.io.{ByteArrayInputStream, DataInputStream, FileInputStream, FileOutputStream}
+import java.io.{ByteArrayInputStream, FileOutputStream, RandomAccessFile}
 import java.nio.file.Paths
 import java.util.zip.Inflater
 import javax.imageio.ImageIO
@@ -16,16 +15,17 @@ import scala.collection.mutable.ArrayBuffer
 object OneBitDecoder {
 
   def decode(inPath: String, outPath: Option[String], overwriteExisting: Boolean): Unit = {
-    val input: DataInputStream           = new DataInputStream(new FileInputStream(inPath))
-    val animationConfig: AnimationConfig = AnimationConfig.fromByte(input.read().toByte)
-    val blockW: Int                      = input.read()
-    val blockH: Int                      = input.read()
-    val imgW: Int                        = blockW * 16
-    val imgH: Int                        = blockH * 16
-    val img: BufferedImage               = new BufferedImage(imgW, imgH, BufferedImage.TYPE_INT_RGB)
-    val gfx: Graphics                    = img.getGraphics
-
-    val blockDescriptorBytes: Array[Byte]    = input.readNBytes(Math.ceil((blockW * blockH).toDouble / 4).toInt)
+    val input: RandomAccessFile = new RandomAccessFile(inPath, "r")
+    input.read() //skip the first animation config byte (for now)
+    val blockW: Int                       = input.read()
+    val blockH: Int                       = input.read()
+    val imgW: Int                         = blockW * 16
+    val imgH: Int                         = blockH * 16
+    val img: BufferedImage                = new BufferedImage(imgW, imgH, BufferedImage.TYPE_INT_RGB)
+    val gfx: Graphics                     = img.getGraphics
+    val blockDescriptorByteCount          = Math.ceil((blockW * blockH).toDouble / 4).toInt
+    val blockDescriptorBytes: Array[Byte] = new Array[Byte](blockDescriptorByteCount)
+    input.readFully(blockDescriptorBytes)
     val blockDescriptors: ArrayBuffer[Block] = unpack(blockDescriptorBytes)
     val blocksWithCoordinates                = resolveCoordinates(blockDescriptors, blockW)
     val readyToPaintBlocks                   = addLengths(blocksWithCoordinates, input)
@@ -112,7 +112,7 @@ object OneBitDecoder {
 
   def addLengths(
       blocksWithCoordinates: ArrayBuffer[BlockWithCoordinates],
-      input: DataInputStream
+      input: RandomAccessFile
   ): ArrayBuffer[BlockWithCoordinates] = {
     @tailrec
     def readBlockData(stream: ByteArrayInputStream, builder: MixedColorBlockBuilder, read: Int): Unit = {
@@ -122,10 +122,10 @@ object OneBitDecoder {
       if (read + length < 256) readBlockData(stream, builder, read + length)
     }
 
-    def decompressBlockData(compressedInput: DataInputStream, byteCount: Int): ByteArrayInputStream = {
-      val inflater: Inflater = new Inflater()
-      val compressedBytes =
-        compressedInput.readNBytes(byteCount)
+    def decompressBlockData(compressedInput: RandomAccessFile, byteCount: Int): ByteArrayInputStream = {
+      val inflater: Inflater           = new Inflater()
+      val compressedBytes: Array[Byte] = new Array[Byte](byteCount)
+      compressedInput.readFully(compressedBytes)
       inflater.setInput(compressedBytes)
       val decompressedData: Array[Byte] = new Array(compressedBytes.length * 5)
       val inflatedByteCount             = inflater.inflate(decompressedData)

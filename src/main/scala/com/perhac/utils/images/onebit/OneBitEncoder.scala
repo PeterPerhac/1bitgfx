@@ -1,8 +1,8 @@
 package com.perhac.utils.images.onebit
 
 import com.perhac.utils.images.onebit.BlockColor.fromAwtColor
-import com.perhac.utils.images.onebit.OneBitCodec.{cannotOverwriteExistingFile, time}
-import com.perhac.utils.images.onebit.animation.Loop
+import com.perhac.utils.images.onebit.OneBitCodec.cannotOverwriteExistingFile
+import com.perhac.utils.images.onebit.animation.{Loop, ScreenImageGrabber, WebcamImageGrabber}
 
 import java.awt.Color
 import java.awt.image.BufferedImage
@@ -40,7 +40,7 @@ object OneBitEncoder {
         do {
           frameNo = frameNo + 1
           val grabbedImage = imageGrabber.grab()
-          val img          = if (webcam) ImageUtils.resize(grabbedImage, 864, 540) else grabbedImage
+          val img          = ImageUtils.resize(grabbedImage, 432, 270 ) //, 864, 540)
           encodeImage(img, threshold, out, frameNo == 1)
           print(f"\rrecorded frames: $frameNo%d (estimated ${frameNo.toDouble / 32}%2.2fs)")
         } while (!Thread.interrupted())

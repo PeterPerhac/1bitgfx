@@ -23,11 +23,15 @@ case object Bounce extends PlaybackMode {
 }
 
 case class AnimationConfig(fps: Byte, playbackMode: PlaybackMode) {
+  val isStillImage: Boolean = fps == 0 && playbackMode == DontPlay
+
   override def toString: String = s"Animation config: FPS = $fps and playbackMode = $playbackMode"
 }
 
 object AnimationConfig {
-  def fromByte(animationByte: Byte): AnimationConfig = {
+
+  //the first byte in the file, when read as an unsigned byte - therefore an Int
+  def fromByte(animationByte: Int): AnimationConfig = {
     AnimationConfig(
       ((animationByte & 0xfc) >>> 2).toByte,
       (animationByte & 0x03).toByte match {

@@ -1,12 +1,12 @@
-package com.perhac.utils.images.onebit
+package com.perhac.utils.images.onebit.animation
 
 import org.bytedeco.javacv.{Java2DFrameConverter, OpenCVFrameGrabber}
 
-import java.awt.{Rectangle, Robot, Toolkit}
 import java.awt.image.BufferedImage
-import scala.concurrent.{Await, Future, TimeoutException}
+import java.awt.{Rectangle, Robot, Toolkit}
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
+import scala.concurrent.{Await, Future, TimeoutException}
 
 trait ImageGrabber {
 
