@@ -1,22 +1,17 @@
 package com.perhac.utils.images.onebit
 
 import com.perhac.utils.images.onebit.BlockColor.fromAwtColor
-import com.perhac.utils.images.onebit.OneBitCodec.cannotOverwriteExistingFile
+import com.perhac.utils.images.onebit.OneBitCodec.{cannotOverwriteExistingFile, time}
 import com.perhac.utils.images.onebit.animation.Loop
-import org.bytedeco.javacv.{Java2DFrameConverter, OpenCVFrameGrabber}
 
 import java.awt.Color
 import java.awt.image.BufferedImage
 import java.io.{ByteArrayOutputStream, DataOutputStream, FileInputStream, FileOutputStream}
 import java.nio.file.Paths
-import java.util.concurrent.TimeoutException
 import java.util.zip.Deflater
 import javax.imageio.ImageIO
 import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.duration._
-import scala.concurrent.{Await, Future}
 
 object OneBitEncoder {
 
@@ -34,26 +29,18 @@ object OneBitEncoder {
     averages.sum / averages.size
   }
 
-  def record(outPath: String, threshold: Option[Float], overwriteExisting: Boolean): Unit = {
-    val grabber = new OpenCVFrameGrabber(0)
-    println("Starting Webcam...")
-    val futureGrabberResult = Future { grabber.start() }
-    try {
-      Await.ready(futureGrabberResult, 5.seconds)
-    } catch {
-      case _: TimeoutException =>
-        System.err.println("Reached 5s timeout while waiting for Webcam to initialise")
-        sys.exit(3)
-    }
-    val paintConverter = new Java2DFrameConverter()
+  def record(outPath: String, threshold: Option[Float], overwriteExisting: Boolean, webcam: Boolean): Unit = {
+    val imageGrabber = if (webcam) new WebcamImageGrabber() else new ScreenImageGrabber()
+
     if (!Paths.get(outPath).toFile.exists() || overwriteExisting) {
       val out = new DataOutputStream(new FileOutputStream(outPath))
+      out.writeByte(Loop.atFps(32))
       try {
         var frameNo: Int = 0
         do {
           frameNo = frameNo + 1
-          out.write(Array[Byte](Loop.atFps(32)))
-          val img = ImageUtils.resize(paintConverter.convert(grabber.grab()), 576, 360)
+          val grabbedImage = imageGrabber.grab()
+          val img          = if (webcam) ImageUtils.resize(grabbedImage, 864, 540) else grabbedImage
           encodeImage(img, threshold, out, frameNo == 1)
           print(f"\rrecorded frames: $frameNo%d (estimated ${frameNo.toDouble / 32}%2.2fs)")
         } while (!Thread.interrupted())

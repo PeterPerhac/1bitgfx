@@ -47,12 +47,14 @@ object OneBitCodec {
     )
     .withDefault("")
 
-  private val encodeFlag   = flag("encode", "encode the input image file as 1bp (1 bit picture)", "e").map(_ => encode)
-  private val decodeFlag   = flag("decode", "decode the input 1 bit picture file into PNG format", "d").map(_ => decode)
-  private val recordFlag   = flag("record", "record from webcam into an animated 1bp file", "r").map(_ => record)
+  private val encodeFlag = flag("encode", "encode the input image file as 1bp (1 bit picture)", "e").map(_ => encode)
+  private val decodeFlag = flag("decode", "decode the input 1 bit picture file into PNG format", "d").map(_ => decode)
+  private val recordFlag = flag("record", "record from webcam into an animated 1bp file", "r").map(_ => record)
+  private val screenRecordFlag =
+    flag("screen-record", "record the entire screen into an animated 1bp file", "s").map(_ => screenRecord)
   private val playbackFlag = flag("playback", "play back recorded 1bp animation", "p").map(_ => playback)
   private val forceFlag    = flag("force", "force-write the output file, overwriting any existing files", "f").orFalse
-  private val operation    = encodeFlag orElse decodeFlag orElse recordFlag orElse playbackFlag
+  private val operation    = encodeFlag orElse decodeFlag orElse recordFlag orElse screenRecordFlag orElse playbackFlag
 
   private def illegalThreshold = {
     System.err.println("Illegal threshold argument. Provide a floating point number in the [0..1] range")
@@ -70,7 +72,11 @@ object OneBitCodec {
 
   val record: Config => Unit = conf => {
     val outPath = conf.out.getOrElse("recording.1bp")
-    OneBitEncoder.record(outPath, conf.threshold, conf.force)
+    OneBitEncoder.record(outPath, conf.threshold, conf.force, webcam = true)
+  }
+  val screenRecord: Config => Unit = conf => {
+    val outPath = conf.out.getOrElse("screen-recording.1bp")
+    OneBitEncoder.record(outPath, conf.threshold, conf.force, webcam = false)
   }
 
   val playback: Config => Unit = conf => {

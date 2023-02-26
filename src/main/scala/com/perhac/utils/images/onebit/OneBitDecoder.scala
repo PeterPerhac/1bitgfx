@@ -125,7 +125,7 @@ object OneBitDecoder {
     def decompressBlockData(compressedInput: DataInputStream, byteCount: Int): ByteArrayInputStream = {
       val inflater: Inflater = new Inflater()
       val compressedBytes =
-        compressedInput.readNBytes(byteCount + 1) //THIS magic +1 makes it all work but I don't know why
+        compressedInput.readNBytes(byteCount)
       inflater.setInput(compressedBytes)
       val decompressedData: Array[Byte] = new Array(compressedBytes.length * 5)
       val inflatedByteCount             = inflater.inflate(decompressedData)
