@@ -14,7 +14,7 @@ import scala.collection.mutable.ArrayBuffer
 
 object AnimationPlayer {
 
-  case class Frame(offset: Int, number: Int)
+  case class Frame(number: Int, offset: Int)
 
   private def findFrameOffsets(input: RandomAccessFile, blockDescriptorByteCount: Int): Array[Int] = {
     //rough guess at an average animation played at 32 fps for 10s
@@ -31,7 +31,7 @@ object AnimationPlayer {
   private val nextFrameSelector: PlaybackState => Option[(Frame, PlaybackState)] = s => {
     def nextState(forward: Boolean, frameNumberIncrement: Int => Int): Option[(Frame, PlaybackState)] =
       Some(
-        Frame(s.offsets(s.currentFrame), s.currentFrame),
+        Frame(s.currentFrame, s.offsets(s.currentFrame)),
         s.copy(forward = forward, currentFrame = frameNumberIncrement(s.currentFrame))
       )
 
@@ -40,7 +40,7 @@ object AnimationPlayer {
         s.playbackMode match {
           case DontPlay => None
           case PlayOnce => None
-          case Loop     => Some((Frame(s.offsets(0), 0), s.copy(currentFrame = 0)))
+          case Loop     => Some((Frame(0, s.offsets(0)), s.copy(currentFrame = 0)))
           case Bounce   => nextState(forward = false, _ - 1)
         }
       } else {
@@ -76,13 +76,17 @@ object AnimationPlayer {
 
       var startT: Long = 0L
       frameOffsetStream.foreach { frame =>
-        canvas.setTitle(f"FPS: ${metadata.animationConfig.fps}%d, frame # ${frame.number}%d of ${frameOffsets.length}")
-        Thread.sleep(Math.max(0L, (1000 / metadata.animationConfig.fps).toLong - (System.currentTimeMillis() - startT)))
+        canvas.setTitle(
+          f"FPS: ${metadata.animationConfig.fps}%d, frame # ${frame.number + 1}%d of ${frameOffsets.length}"
+        )
+        val sleepInterval =
+          Math.max(0L, (1000 / metadata.animationConfig.fps).toLong - (System.currentTimeMillis() - startT))
+        Thread.sleep(sleepInterval)
+        startT = System.currentTimeMillis()
         input.seek(frame.offset)
         input.read(blockDescriptorBytes)
         OneBitDecoder.decodeImage(blockDescriptorBytes, input, metadata.blockW)(gfx)
         canvas.showImage(img)
-        startT = System.currentTimeMillis()
       }
 
       canvas.dispatchEvent(new WindowEvent(canvas, WindowEvent.WINDOW_CLOSING))

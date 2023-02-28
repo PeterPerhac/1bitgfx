@@ -2,18 +2,20 @@ package com.perhac.utils.images.onebit
 
 import com.perhac.utils.images.onebit.BlockColor.fromAwtColor
 import com.perhac.utils.images.onebit.OneBitCodec.cannotOverwriteExistingFile
-import com.perhac.utils.images.onebit.animation.{Loop, ScreenImageGrabber, WebcamImageGrabber}
+import com.perhac.utils.images.onebit.animation.{Bounce, ScreenImageGrabber, WebcamImageGrabber}
 
 import java.awt.Color
 import java.awt.image.BufferedImage
 import java.io.{ByteArrayOutputStream, DataOutputStream, FileInputStream, FileOutputStream}
 import java.nio.file.Paths
-import java.util.zip.Deflater
+import java.util.zip.{Deflater, DeflaterOutputStream}
 import javax.imageio.ImageIO
 import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
 
 object OneBitEncoder {
+
+  private val RECORDING_FPS = 20
 
   private def calculateMidPoint(img: BufferedImage): Float = {
     val averages = for {
@@ -34,15 +36,16 @@ object OneBitEncoder {
 
     if (!Paths.get(outPath).toFile.exists() || overwriteExisting) {
       val out = new DataOutputStream(new FileOutputStream(outPath))
-      out.writeByte(Loop.atFps(32))
+      out.writeByte(Bounce.atFps(RECORDING_FPS))
       try {
         var frameNo: Int = 0
         do {
           frameNo = frameNo + 1
           val grabbedImage = imageGrabber.grab()
-          val img          = ImageUtils.resize(grabbedImage, 432, 270 ) //, 864, 540)
+          val img          = ImageUtils.resize(grabbedImage, 432, 270)
+          // val img          = ImageUtils.resize(grabbedImage, 864, 540)
           encodeImage(img, threshold, out, frameNo == 1)
-          print(f"\rrecorded frames: $frameNo%d (estimated ${frameNo.toDouble / 32}%2.2fs)")
+          print(f"\rrecorded frames: $frameNo%d (estimated ${frameNo.toDouble / RECORDING_FPS}%2.2fs)")
         } while (!Thread.interrupted())
       } finally {
         out.close()
@@ -142,20 +145,25 @@ object OneBitEncoder {
         .toArray
 
     out.write(blockDescriptorBytes)
-    val blockData: ByteArrayOutputStream = new ByteArrayOutputStream(1024)
-    blocks.foreach {
-      case block: MixedColorBlock =>
-        blockData.write(block.lengths.map(_.toByte).toArray)
-      case _ => //do nothing
+
+    val compressor: Deflater            = new Deflater(Deflater.BEST_COMPRESSION, true)
+    val compressedByteArrayOutputStream = new ByteArrayOutputStream(1024)
+    val compressedBlockData: DeflaterOutputStream =
+      new DeflaterOutputStream(compressedByteArrayOutputStream, compressor)
+
+    try {
+      blocks.foreach {
+        case block: MixedColorBlock =>
+          compressedBlockData.write(block.lengths.map(_.toByte).toArray)
+        case _ => //do nothing
+      }
+    } finally {
+      compressedBlockData.close()
     }
-    val output: Array[Byte]  = new Array(blockData.size())
-    val compressor: Deflater = new Deflater()
-    compressor.setInput(blockData.toByteArray)
-    compressor.finish()
-    val deflatedBytesCount = compressor.deflate(output)
-    compressor.end()
-    out.writeInt(deflatedBytesCount)         //writes the NUMBER of bytes in the data block
-    out.write(output, 0, deflatedBytesCount) //writes the data block itself
+
+    val deflatedBytesCount = compressedByteArrayOutputStream.size()
+    out.writeInt(deflatedBytesCount)                                              //writes the NUMBER of bytes in the data block
+    out.write(compressedByteArrayOutputStream.toByteArray, 0, deflatedBytesCount) //writes the data block itself
   }
 
 }

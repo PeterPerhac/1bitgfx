@@ -2,14 +2,14 @@ package com.perhac.utils.images.onebit
 
 import better.files._
 import com.perhac.utils.images.onebit.OneBitCodec.{cannotOverwriteExistingFile, time}
-import com.perhac.utils.images.onebit.animation.{AnimationConfig, Bounce}
+import com.perhac.utils.images.onebit.animation.AnimationConfig
 
 import java.awt.image.BufferedImage
 import java.awt.image.BufferedImage.TYPE_INT_RGB
 import java.awt.{Color, Graphics}
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, FileOutputStream, RandomAccessFile}
 import java.nio.file.Paths
-import java.util.zip.InflaterInputStream
+import java.util.zip.{Inflater, InflaterInputStream}
 import javax.imageio.ImageIO
 import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
@@ -17,7 +17,7 @@ import scala.collection.mutable.ArrayBuffer
 object OneBitDecoder {
 
   def readMetadata(input: RandomAccessFile): OneBitPictureMetadata = {
-    val ac     = AnimationConfig.fromByte(input.read()).copy(playbackMode = Bounce)
+    val ac     = AnimationConfig.fromByte(input.read())
     val blockW = input.read()
     val blockH = input.read()
     OneBitPictureMetadata(
@@ -137,7 +137,7 @@ object OneBitDecoder {
 
     def decompressBlockData(compressedBytes: Array[Byte]): ByteArrayInputStream = {
       val currentFrameData: ByteArrayInputStream = new ByteArrayInputStream(compressedBytes)
-      val inflaterStream                         = new InflaterInputStream(currentFrameData)
+      val inflaterStream                         = new InflaterInputStream(currentFrameData, new Inflater(true))
       val inflatedByteStream                     = new ByteArrayOutputStream()
       var read: Int                              = 0
       val buffer                                 = new Array[Byte](Math.max(compressedBytes.length / 4, 1024))
