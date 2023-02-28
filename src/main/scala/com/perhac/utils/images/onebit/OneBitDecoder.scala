@@ -2,34 +2,47 @@ package com.perhac.utils.images.onebit
 
 import better.files._
 import com.perhac.utils.images.onebit.OneBitCodec.{cannotOverwriteExistingFile, time}
+import com.perhac.utils.images.onebit.animation.{AnimationConfig, Bounce}
 
 import java.awt.image.BufferedImage
+import java.awt.image.BufferedImage.TYPE_INT_RGB
 import java.awt.{Color, Graphics}
-import java.io.{ByteArrayInputStream, FileOutputStream, RandomAccessFile}
+import java.io.{ByteArrayInputStream, ByteArrayOutputStream, FileOutputStream, RandomAccessFile}
 import java.nio.file.Paths
-import java.util.zip.Inflater
+import java.util.zip.InflaterInputStream
 import javax.imageio.ImageIO
 import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
 
 object OneBitDecoder {
 
-  def decode(inPath: String, outPath: Option[String], overwriteExisting: Boolean): Unit = {
-    val input: RandomAccessFile = new RandomAccessFile(inPath, "r")
-    input.read() //skip the first animation config byte (for now)
-    val blockW: Int                       = input.read()
-    val blockH: Int                       = input.read()
-    val imgW: Int                         = blockW * 16
-    val imgH: Int                         = blockH * 16
-    val img: BufferedImage                = new BufferedImage(imgW, imgH, BufferedImage.TYPE_INT_RGB)
-    val gfx: Graphics                     = img.getGraphics
-    val blockDescriptorByteCount          = Math.ceil((blockW * blockH).toDouble / 4).toInt
-    val blockDescriptorBytes: Array[Byte] = new Array[Byte](blockDescriptorByteCount)
-    input.readFully(blockDescriptorBytes)
+  def readMetadata(input: RandomAccessFile): OneBitPictureMetadata = {
+    val ac     = AnimationConfig.fromByte(input.read()).copy(playbackMode = Bounce)
+    val blockW = input.read()
+    val blockH = input.read()
+    OneBitPictureMetadata(
+      animationConfig = ac,
+      blockW = blockW,
+      blockH = blockH,
+      blockDescriptorByteCount = Math.ceil((blockW * blockH).toDouble / 4).toInt
+    )
+  }
+
+  def decodeImage(blockDescriptorBytes: Array[Byte], input: RandomAccessFile, blockW: Int)(gfx: Graphics): Unit = {
     val blockDescriptors: ArrayBuffer[Block] = unpack(blockDescriptorBytes)
     val blocksWithCoordinates                = resolveCoordinates(blockDescriptors, blockW)
     val readyToPaintBlocks                   = addLengths(blocksWithCoordinates, input)
     readyToPaintBlocks.foreach(paintBlock(gfx))
+  }
+
+  def decode(inPath: String, outPath: Option[String], overwriteExisting: Boolean): Unit = {
+    val input: RandomAccessFile           = new RandomAccessFile(inPath, "r")
+    val metadata                          = readMetadata(input)
+    val img: BufferedImage                = new BufferedImage(metadata.imgW, metadata.imgH, TYPE_INT_RGB)
+    val gfx: Graphics                     = img.getGraphics
+    val blockDescriptorBytes: Array[Byte] = new Array[Byte](metadata.blockDescriptorByteCount)
+    input.read(blockDescriptorBytes)
+    decodeImage(blockDescriptorBytes, input, metadata.blockW)(gfx)
     gfx.dispose()
 
     val inFile = inPath.toFile
@@ -41,7 +54,7 @@ object OneBitDecoder {
       try {
         time("write image to output") {
           ImageIO.write(img, "PNG", outStream)
-          System.out.println("output file saved to:" + outFilePath)
+          System.out.println("output file saved to: " + outFilePath)
         }
       } finally {
         outStream.close()
@@ -122,19 +135,28 @@ object OneBitDecoder {
       if (read + length < 256) readBlockData(stream, builder, read + length)
     }
 
-    def decompressBlockData(compressedInput: RandomAccessFile, byteCount: Int): ByteArrayInputStream = {
-      val inflater: Inflater           = new Inflater()
-      val compressedBytes: Array[Byte] = new Array[Byte](byteCount)
-      compressedInput.readFully(compressedBytes)
-      inflater.setInput(compressedBytes)
-      val decompressedData: Array[Byte] = new Array(compressedBytes.length * 5)
-      val inflatedByteCount             = inflater.inflate(decompressedData)
-      inflater.end()
-      new ByteArrayInputStream(decompressedData, 0, inflatedByteCount)
+    def decompressBlockData(compressedBytes: Array[Byte]): ByteArrayInputStream = {
+      val currentFrameData: ByteArrayInputStream = new ByteArrayInputStream(compressedBytes)
+      val inflaterStream                         = new InflaterInputStream(currentFrameData)
+      val inflatedByteStream                     = new ByteArrayOutputStream()
+      var read: Int                              = 0
+      val buffer                                 = new Array[Byte](Math.max(compressedBytes.length / 4, 1024))
+      try {
+        do {
+          read = inflaterStream.read(buffer)
+          if (read > 0) inflatedByteStream.write(buffer, 0, read)
+        } while (read > 0)
+      } finally {
+        inflaterStream.close()
+      }
+
+      new ByteArrayInputStream(inflatedByteStream.toByteArray)
     }
 
-    val dataBytesCount                  = input.readInt()
-    val blockData: ByteArrayInputStream = decompressBlockData(input, dataBytesCount)
+    val dataBlockSize                = input.readInt()
+    val compressedBytes: Array[Byte] = new Array[Byte](dataBlockSize)
+    input.readFully(compressedBytes)
+    val blockData: ByteArrayInputStream = decompressBlockData(compressedBytes)
 
     try {
       blocksWithCoordinates.map {

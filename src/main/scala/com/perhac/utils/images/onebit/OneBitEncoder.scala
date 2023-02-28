@@ -58,7 +58,7 @@ object OneBitEncoder {
       try {
         out.write(Array[Byte](0.toByte)) //animation byte, just a zero if no animation
         encodeImage(ImageIO.read(new FileInputStream(inPath)), threshold, out)
-        System.out.println("output file saved to:" + outPath)
+        System.out.println("output file saved to: " + outPath)
       } finally {
         out.close()
       }

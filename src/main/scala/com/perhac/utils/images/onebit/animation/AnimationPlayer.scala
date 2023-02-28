@@ -1,11 +1,12 @@
 package com.perhac.utils.images.onebit.animation
 
-import com.perhac.utils.images.onebit.{Block, OneBitDecoder}
+import com.perhac.utils.images.onebit.OneBitDecoder
 import org.bytedeco.javacv.CanvasFrame
 
 import java.awt.Graphics
 import java.awt.event.WindowEvent
 import java.awt.image.BufferedImage
+import java.awt.image.BufferedImage.TYPE_INT_RGB
 import java.io.RandomAccessFile
 import java.nio.file.Paths
 import javax.swing.WindowConstants
@@ -13,7 +14,10 @@ import scala.collection.mutable.ArrayBuffer
 
 object AnimationPlayer {
 
-  private def scanForFrames(input: RandomAccessFile, blockDescriptorByteCount: Int): Array[Int] = {
+  case class Frame(offset: Int, number: Int)
+
+  private def findFrameOffsets(input: RandomAccessFile, blockDescriptorByteCount: Int): Array[Int] = {
+    //rough guess at an average animation played at 32 fps for 10s
     val buf: ArrayBuffer[Int] = new ArrayBuffer[Int](320)
     do {
       buf.addOne(input.getFilePointer.toInt)
@@ -24,29 +28,27 @@ object AnimationPlayer {
     buf.toArray
   }
 
-  val nextElementAndState: PlaybackState => Option[(Int, PlaybackState)] = s => {
+  private val nextFrameSelector: PlaybackState => Option[(Frame, PlaybackState)] = s => {
+    def nextState(forward: Boolean, frameNumberIncrement: Int => Int): Option[(Frame, PlaybackState)] =
+      Some(
+        Frame(s.offsets(s.currentFrame), s.currentFrame),
+        s.copy(forward = forward, currentFrame = frameNumberIncrement(s.currentFrame))
+      )
+
     if (s.forward) {
       if ((s.currentFrame + 1) == s.offsets.length) {
         s.playbackMode match {
           case DontPlay => None
           case PlayOnce => None
-          case Loop     => Some((s.offsets(0), s.copy(currentFrame = 0)))
-          case Bounce   => Some((s.offsets(s.currentFrame), s.copy(currentFrame = s.currentFrame - 1, forward = false)))
+          case Loop     => Some((Frame(s.offsets(0), 0), s.copy(currentFrame = 0)))
+          case Bounce   => nextState(forward = false, _ - 1)
         }
       } else {
-        Some(s.offsets(s.currentFrame), s.copy(currentFrame = s.currentFrame + 1))
+        nextState(forward = true, _ + 1)
       }
     } else {
-      if (s.currentFrame == 0) {
-        s.playbackMode match {
-          case DontPlay | PlayOnce | Loop =>
-            System.err.println(s"oops. Shouldn't be playing backwards when in ${s.playbackMode} mode")
-            sys.exit(5)
-          case Bounce => Some((s.offsets(s.currentFrame), s.copy(currentFrame = s.currentFrame + 1, forward = true)))
-        }
-      } else {
-        Some(s.offsets(s.currentFrame), s.copy(currentFrame = s.currentFrame - 1))
-      }
+      //playing in backwards direction, don't need to check for playback mode, as it must be Bounce
+      if (s.currentFrame == 0) nextState(forward = true, _ + 1) else nextState(forward = false, _ - 1)
     }
   }
 
@@ -54,37 +56,31 @@ object AnimationPlayer {
 
     val input = new RandomAccessFile(Paths.get(inPath).toFile, "r")
     try {
-      val animationConfig: AnimationConfig = AnimationConfig.fromByte(input.read()).copy(playbackMode = Bounce)
-      if (animationConfig.isStillImage) {
+      val metadata = OneBitDecoder.readMetadata(input)
+      if (metadata.isStillImage) {
         System.err.println("Attempting to play back a still image. Use the decode utility for decoding still images.")
         sys.exit(4)
       }
-      val blockW: Int              = input.read()
-      val blockH: Int              = input.read()
-      val blockDescriptorByteCount = Math.ceil((blockW * blockH).toDouble / 4).toInt
       //the array will hold block descriptors for any frame, as there will always be the same number of blocks in each frame of an animation
-      val blockDescriptorBytes: Array[Byte] = new Array[Byte](blockDescriptorByteCount)
+      val blockDescriptorBytes: Array[Byte] = new Array[Byte](metadata.blockDescriptorByteCount)
 
-      val frameOffsets: Array[Int] = scanForFrames(input, blockDescriptorByteCount)
-      val imgW: Int                = blockW * 16
-      val imgH: Int                = blockH * 16
-      val img: BufferedImage       = new BufferedImage(imgW, imgH, BufferedImage.TYPE_INT_RGB)
+      val frameOffsets: Array[Int] = findFrameOffsets(input, metadata.blockDescriptorByteCount)
+      val img: BufferedImage       = new BufferedImage(metadata.imgW, metadata.imgH, TYPE_INT_RGB)
       val gfx: Graphics            = img.getGraphics
-      val canvas                   = new CanvasFrame("1 Bit Animation Player")
+
+      val canvas = new CanvasFrame("1 Bit Animation Player")
       canvas.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE)
 
-      val initialState: PlaybackState      = PlaybackState(frameOffsets, playbackMode = animationConfig.playbackMode)
-      val frameOffsetStream: LazyList[Int] = LazyList.unfold(initialState)(nextElementAndState)
+      val frameOffsetStream: LazyList[Frame] =
+        LazyList.unfold(PlaybackState(frameOffsets, metadata.animationConfig.playbackMode))(nextFrameSelector)
 
       var startT: Long = 0L
-      frameOffsetStream.foreach { offset =>
-        Thread.sleep(Math.max(0L, (1000 / animationConfig.fps).toLong - (System.currentTimeMillis() - startT)))
-        input.seek(offset)
-        input.readFully(blockDescriptorBytes)
-        val blockDescriptors: ArrayBuffer[Block] = OneBitDecoder.unpack(blockDescriptorBytes)
-        val blocksWithCoordinates                = OneBitDecoder.resolveCoordinates(blockDescriptors, blockW)
-        val readyToPaintBlocks                   = OneBitDecoder.addLengths(blocksWithCoordinates, input)
-        readyToPaintBlocks.foreach(OneBitDecoder.paintBlock(gfx))
+      frameOffsetStream.foreach { frame =>
+        canvas.setTitle(f"FPS: ${metadata.animationConfig.fps}%d, frame # ${frame.number}%d of ${frameOffsets.length}")
+        Thread.sleep(Math.max(0L, (1000 / metadata.animationConfig.fps).toLong - (System.currentTimeMillis() - startT)))
+        input.seek(frame.offset)
+        input.read(blockDescriptorBytes)
+        OneBitDecoder.decodeImage(blockDescriptorBytes, input, metadata.blockW)(gfx)
         canvas.showImage(img)
         startT = System.currentTimeMillis()
       }
