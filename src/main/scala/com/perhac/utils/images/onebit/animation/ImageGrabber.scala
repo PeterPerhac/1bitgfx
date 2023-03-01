@@ -1,5 +1,6 @@
 package com.perhac.utils.images.onebit.animation
 
+import org.bytedeco.javacv.FrameGrabber.ImageMode
 import org.bytedeco.javacv.{Java2DFrameConverter, OpenCVFrameGrabber}
 
 import java.awt.image.BufferedImage
@@ -16,6 +17,10 @@ trait ImageGrabber {
 
 class WebcamImageGrabber() extends ImageGrabber {
   val grabber = new OpenCVFrameGrabber(0)
+  grabber.setImageMode(ImageMode.GRAY)
+  //these exact dimensions will be ignored, and the nearest supported resolution of 640x480 will be grabbed
+  grabber.setImageWidth(432)
+  grabber.setImageHeight(270)
   println("Starting Webcam...")
   private val futureGrabberResult = Future { grabber.start() }
   try {
@@ -27,7 +32,9 @@ class WebcamImageGrabber() extends ImageGrabber {
   }
   private val paintConverter = new Java2DFrameConverter()
 
-  override def grab(): BufferedImage = paintConverter.convert(grabber.grab())
+  override def grab(): BufferedImage =
+    paintConverter.convert(grabber.grab())
+
 }
 
 class ScreenImageGrabber() extends ImageGrabber {

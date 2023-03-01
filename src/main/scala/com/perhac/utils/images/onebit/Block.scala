@@ -43,10 +43,32 @@ case object Black extends BlockColor
 case object White extends BlockColor
 
 object BlockColor {
-  def fromAwtColor(color: Color, midPoint: Float): BlockColor = {
-    // let AWT allocate the returned array by passing null
-    if (color.getRGBColorComponents(null).sum > (3 * midPoint)) White else Black
+
+  case class PixelValue(value: Double)  extends AnyVal
+  case class Midpoint(midpoint: Double) extends AnyVal
+  type ClassifierFunction = PixelValue => Midpoint => BlockColor
+
+  object DefaultClassifier extends ClassifierFunction {
+    override def apply(pixelValue: PixelValue): Midpoint => BlockColor = mp => {
+      if (pixelValue.value > (3 * mp.midpoint)) White else Black
+    }
   }
+
+  object ContouredClassifier extends ClassifierFunction {
+    override def apply(pixelValue: PixelValue): Midpoint => BlockColor = mp => {
+      if (pixelValue.value < mp.midpoint + 0.25 && pixelValue.value > mp.midpoint - 0.25) Black else White
+    }
+  }
+
+  object LowAndHigh extends ClassifierFunction {
+    override def apply(pixelValue: PixelValue): Midpoint => BlockColor = _ => {
+      if (pixelValue.value < 0.75 || pixelValue.value > 2.25) White else Black
+    }
+  }
+
+  def fromAwtColor(color: Color, midPoint: Float, classifier: ClassifierFunction): BlockColor =
+    classifier(PixelValue(color.getRGBColorComponents(null).sum))(Midpoint(midPoint))
+
 }
 
 case class BlockWithCoordinates(block: Block, colIdx: Int, rowIdx: Int) {

@@ -1,6 +1,6 @@
 package com.perhac.utils.images.onebit
 
-import com.perhac.utils.images.onebit.BlockColor.fromAwtColor
+import com.perhac.utils.images.onebit.BlockColor._
 import com.perhac.utils.images.onebit.OneBitCodec.cannotOverwriteExistingFile
 import com.perhac.utils.images.onebit.animation.{Bounce, ScreenImageGrabber, WebcamImageGrabber}
 
@@ -15,7 +15,7 @@ import scala.collection.mutable.ArrayBuffer
 
 object OneBitEncoder {
 
-  private val RECORDING_FPS = 20
+  private val RECORDING_FPS = 30
 
   private def calculateMidPoint(img: BufferedImage): Float = {
     val averages = for {
@@ -43,7 +43,6 @@ object OneBitEncoder {
           frameNo = frameNo + 1
           val grabbedImage = imageGrabber.grab()
           val img          = ImageUtils.resize(grabbedImage, 432, 270)
-          // val img          = ImageUtils.resize(grabbedImage, 864, 540)
           encodeImage(img, threshold, out, frameNo == 1)
           print(f"\rrecorded frames: $frameNo%d (estimated ${frameNo.toDouble / RECORDING_FPS}%2.2fs)")
         } while (!Thread.interrupted())
@@ -98,7 +97,8 @@ object OneBitEncoder {
         x <- 0 to 15
       } yield fromAwtColor(
         color = new Color(img.getRGB(colIdx * 16 + x, rowIdx * 16 + y)),
-        midPoint = midpoint
+        midPoint = midpoint,
+        classifier = LowAndHigh //TODO plug one in based on command line switch / option
       )
 
       blocks.addOne(makeBlock(rgbs))
