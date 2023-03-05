@@ -20,7 +20,7 @@ import scala.collection.mutable.ArrayBuffer
 object OneBitEncoder {
 
   private val RECORDING_FPS                    = 30
-  private var pixelClassifier: PixelClassifier = LowAndHigh
+  private var pixelClassifier: PixelClassifier = DefaultClassifier
 
   private def calculateMidPoint(img: BufferedImage): Float = {
     val averages = for {
