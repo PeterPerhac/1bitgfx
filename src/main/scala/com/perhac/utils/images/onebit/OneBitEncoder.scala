@@ -3,19 +3,24 @@ package com.perhac.utils.images.onebit
 import com.perhac.utils.images.onebit.BlockColor._
 import com.perhac.utils.images.onebit.OneBitCodec.cannotOverwriteExistingFile
 import com.perhac.utils.images.onebit.animation.{Bounce, ScreenImageGrabber, WebcamImageGrabber}
+import org.bytedeco.javacv.CanvasFrame
 
 import java.awt.Color
+import java.awt.event.{MouseEvent, MouseListener}
 import java.awt.image.BufferedImage
 import java.io.{ByteArrayOutputStream, DataOutputStream, FileInputStream, FileOutputStream}
 import java.nio.file.Paths
 import java.util.zip.{Deflater, DeflaterOutputStream}
 import javax.imageio.ImageIO
+import javax.swing.WindowConstants
+import javax.swing.event.MouseInputAdapter
 import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
 
 object OneBitEncoder {
 
-  private val RECORDING_FPS = 30
+  private val RECORDING_FPS                    = 30
+  private var pixelClassifier: PixelClassifier = LowAndHigh
 
   private def calculateMidPoint(img: BufferedImage): Float = {
     val averages = for {
@@ -31,19 +36,60 @@ object OneBitEncoder {
     averages.sum / averages.size
   }
 
+  def createPreview(img: BufferedImage, midpoint: Midpoint): BufferedImage = {
+    for {
+      x <- 0 until img.getWidth
+      y <- 0 until img.getHeight
+    } {
+      val c = this.pixelClassifier
+        .classifyPixel(PixelValue(new Color(img.getRGB(x, y)).getRGBColorComponents(null).sum), midpoint) match {
+        case Black => Color.BLACK
+        case White => Color.WHITE
+      }
+      img.setRGB(x, y, c.getRGB)
+    }
+    img
+  }
+
+  private def cycleThroughClassifiersOnMouseClick: MouseListener = new MouseInputAdapter {
+    override def mouseReleased(e: MouseEvent): Unit = {
+      System.out.println()
+      pixelClassifier = pixelClassifier match {
+        case BlockColor.DefaultClassifier =>
+          System.out.println("using ContouredClassifier")
+          ContouredClassifier
+        case BlockColor.ContouredClassifier =>
+          System.out.println("using LowAndHigh")
+          LowAndHigh
+        case BlockColor.LowAndHigh =>
+          System.out.println("using DefaultClassifier")
+          DefaultClassifier
+      }
+    }
+  }
+
   def record(outPath: String, threshold: Option[Float], overwriteExisting: Boolean, webcam: Boolean): Unit = {
     val imageGrabber = if (webcam) new WebcamImageGrabber() else new ScreenImageGrabber()
 
     if (!Paths.get(outPath).toFile.exists() || overwriteExisting) {
       val out = new DataOutputStream(new FileOutputStream(outPath))
       out.writeByte(Bounce.atFps(RECORDING_FPS))
+      var canvas: CanvasFrame = null
+      if (webcam) {
+        canvas = new CanvasFrame("1 Bit Animation Player")
+        canvas.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE)
+        canvas.getContentPane.getComponents.foreach { cmp =>
+          cmp.addMouseListener(cycleThroughClassifiersOnMouseClick)
+        }
+      }
       try {
         var frameNo: Int = 0
         do {
           frameNo = frameNo + 1
           val grabbedImage = imageGrabber.grab()
           val img          = ImageUtils.resize(grabbedImage, 432, 270)
-          encodeImage(img, threshold, out, frameNo == 1)
+          val midpoint     = encodeImage(img, threshold, out, frameNo == 1)
+          if (webcam) { canvas.showImage(createPreview(img, midpoint)) }
           print(f"\rrecorded frames: $frameNo%d (estimated ${frameNo.toDouble / RECORDING_FPS}%2.2fs)")
         } while (!Thread.interrupted())
       } finally {
@@ -74,17 +120,18 @@ object OneBitEncoder {
       threshold: Option[Float],
       out: DataOutputStream,
       firstInSequence: Boolean = true
-  ): Unit = {
+  ): Midpoint = {
     val blocks = imageToBlocks(img, threshold)
     if (firstInSequence) { // width and height to be written to OUT only for the first image in the file
       val blockW = img.getWidth / 16
-      val blockH = blocks.size / blockW
+      val blockH = blocks._1.size / blockW
       out.write(Array[Byte](blockW.toByte, blockH.toByte))
     }
-    serialize(blocks, out)
+    serialize(blocks._1, out)
+    blocks._2
   }
 
-  private def imageToBlocks(img: BufferedImage, threshold: Option[Float]): ArrayBuffer[Block] = {
+  private def imageToBlocks(img: BufferedImage, threshold: Option[Float]): (ArrayBuffer[Block], Midpoint) = {
     val blockW = img.getWidth / 16
     val blockH = img.getHeight / 16
 
@@ -98,12 +145,12 @@ object OneBitEncoder {
       } yield fromAwtColor(
         color = new Color(img.getRGB(colIdx * 16 + x, rowIdx * 16 + y)),
         midPoint = midpoint,
-        classifier = LowAndHigh //TODO plug one in based on command line switch / option
+        classifier = this.pixelClassifier
       )
 
       blocks.addOne(makeBlock(rgbs))
     }
-    blocks
+    (blocks, Midpoint(midpoint))
   }
 
   private def makeBlock(pixels: IndexedSeq[BlockColor]): Block = {
