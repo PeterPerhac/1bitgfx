@@ -87,7 +87,7 @@ object OneBitEncoder {
         do {
           frameNo = frameNo + 1
           val grabbedImage = imageGrabber.grab()
-          val img          = ImageUtils.resize(grabbedImage, 432, 270)
+          val img          = if (webcam) ImageUtils.resize(grabbedImage, 432, 270) else grabbedImage
           val midpoint     = encodeImage(img, threshold, out, frameNo == 1)
           if (webcam) { canvas.showImage(createPreview(img, midpoint)) }
           print(f"\rrecorded frames: $frameNo%d (estimated ${frameNo.toDouble / RECORDING_FPS}%2.2fs)")
