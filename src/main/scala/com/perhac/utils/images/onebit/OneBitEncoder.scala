@@ -12,6 +12,7 @@ import java.io.{ByteArrayOutputStream, DataOutputStream, FileInputStream, FileOu
 import java.nio.file.Paths
 import java.util.zip.{Deflater, DeflaterOutputStream}
 import javax.imageio.ImageIO
+import javax.swing.SwingUtilities.isLeftMouseButton
 import javax.swing.WindowConstants
 import javax.swing.event.MouseInputAdapter
 import scala.annotation.tailrec
@@ -51,20 +52,20 @@ object OneBitEncoder {
     img
   }
 
+  //cycle backwards with right-click
   private def cycleThroughClassifiersOnMouseClick: MouseListener = new MouseInputAdapter {
     override def mouseReleased(e: MouseEvent): Unit = {
       System.out.println()
+      // default -> contoured -> low/high
       pixelClassifier = pixelClassifier match {
         case BlockColor.DefaultClassifier =>
-          System.out.println("using ContouredClassifier")
-          ContouredClassifier
+          if (isLeftMouseButton(e)) ContouredClassifier else LowAndHigh
         case BlockColor.ContouredClassifier =>
-          System.out.println("using LowAndHigh")
-          LowAndHigh
+          if (isLeftMouseButton(e)) LowAndHigh else DefaultClassifier
         case BlockColor.LowAndHigh =>
-          System.out.println("using DefaultClassifier")
-          DefaultClassifier
+          if (isLeftMouseButton(e)) DefaultClassifier else ContouredClassifier
       }
+      System.out.println(s"using $pixelClassifier")
     }
   }
 
@@ -121,14 +122,14 @@ object OneBitEncoder {
       out: DataOutputStream,
       firstInSequence: Boolean = true
   ): Midpoint = {
-    val blocks = imageToBlocks(img, threshold)
+    val (blocks, midpoint) = imageToBlocks(img, threshold)
     if (firstInSequence) { // width and height to be written to OUT only for the first image in the file
       val blockW = img.getWidth / 16
-      val blockH = blocks._1.size / blockW
+      val blockH = blocks.size / blockW
       out.write(Array[Byte](blockW.toByte, blockH.toByte))
     }
-    serialize(blocks._1, out)
-    blocks._2
+    serialize(blocks, out)
+    midpoint
   }
 
   private def imageToBlocks(img: BufferedImage, threshold: Option[Float]): (ArrayBuffer[Block], Midpoint) = {
@@ -164,12 +165,14 @@ object OneBitEncoder {
         processBlock(pixels.dropWhile(_ == firstElement), builder.addLength(pixels.takeWhile(_ == firstElement).size))
       } else builder
 
-    if (pixels.forall(_ == White)) { //all white
+    val whitePixelCount = pixels.count(_ == White)
+
+    if (whitePixelCount >= 251) { //almost all white (max 5 black pixels will be lost)
       WhiteBlock
-    } else if (pixels.contains(White)) { //mixed b/w
-      processBlock(pixels, new MixedColorBlockBuilder(pixels.head)).build()
-    } else {
+    } else if (whitePixelCount < 6) { //almost all black (max 5 white pixels will be lost)
       BlackBlock
+    } else {
+      processBlock(pixels, new MixedColorBlockBuilder(pixels.head)).build()
     }
   }
 

@@ -39,7 +39,7 @@ class WebcamImageGrabber() extends ImageGrabber {
 
 class ScreenImageGrabber() extends ImageGrabber {
   private val screenSize = Toolkit.getDefaultToolkit.getScreenSize
-  private val rectangle  = new Rectangle(0, 0, screenSize.width, screenSize.height)
+  private val rectangle  = new Rectangle(100, 200, screenSize.width/3, screenSize.height/2)
   private val robot      = new Robot()
 
   override def grab(): BufferedImage = {
