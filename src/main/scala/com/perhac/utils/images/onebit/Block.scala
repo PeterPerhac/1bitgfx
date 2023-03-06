@@ -49,24 +49,35 @@ object BlockColor {
 
   sealed trait PixelClassifier {
     def classifyPixel(pixelValue: PixelValue, midpoint: Midpoint): BlockColor
+
   }
 
   object DefaultClassifier extends PixelClassifier {
     override def classifyPixel(pixelValue: PixelValue, mp: Midpoint): BlockColor = {
       if (pixelValue.value > (3 * mp.midpoint)) White else Black
     }
+
+    override def toString: String = "DefaultClassifier (mid point is cut-off)"
+
   }
 
   object ContouredClassifier extends PixelClassifier {
     override def classifyPixel(pixelValue: PixelValue, mp: Midpoint): BlockColor = {
-      if (pixelValue.value < mp.midpoint + 0.25 && pixelValue.value > mp.midpoint - 0.25) Black else White
+      if (pixelValue.value < mp.midpoint + 0.95 && pixelValue.value > mp.midpoint - 0.95) Black else White
     }
+
+    override def toString: String = "ContouredClassifier (values around mid-point are black)"
+
   }
 
   object LowAndHigh extends PixelClassifier {
     override def classifyPixel(pixelValue: PixelValue, mp: Midpoint): BlockColor = {
       if (pixelValue.value < 0.75 || pixelValue.value > 2.25) White else Black
     }
+
+    override def toString: String =
+      "LowAndHigh (mid point is ignored, only very dark and bright areas are white, rest is black)"
+
   }
 
   def fromAwtColor(color: Color, midPoint: Float, classifier: PixelClassifier): BlockColor =

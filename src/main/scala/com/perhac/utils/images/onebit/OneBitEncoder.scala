@@ -2,12 +2,12 @@ package com.perhac.utils.images.onebit
 
 import com.perhac.utils.images.onebit.BlockColor._
 import com.perhac.utils.images.onebit.OneBitCodec.cannotOverwriteExistingFile
-import com.perhac.utils.images.onebit.animation.{Bounce, ScreenImageGrabber, WebcamImageGrabber}
+import com.perhac.utils.images.onebit.animation.{Bounce, ImageGrabber, ScreenImageGrabber, WebcamImageGrabber}
 import org.bytedeco.javacv.CanvasFrame
 
-import java.awt.Color
 import java.awt.event.{MouseEvent, MouseListener}
 import java.awt.image.BufferedImage
+import java.awt.{Color, Toolkit}
 import java.io.{ByteArrayOutputStream, DataOutputStream, FileInputStream, FileOutputStream}
 import java.nio.file.Paths
 import java.util.zip.{Deflater, DeflaterOutputStream}
@@ -69,27 +69,35 @@ object OneBitEncoder {
     }
   }
 
+  def setupPreviewWindow(grabber: ImageGrabber): CanvasFrame = {
+    val frame = new CanvasFrame("1 Bit Animation Recorder (Preview)")
+    frame.setCanvasSize(grabber.size.width, grabber.size.height)
+    val dim = Toolkit.getDefaultToolkit.getScreenSize
+    frame.setLocation(dim.width / 2 - grabber.size.width / 2, dim.height / 2 - grabber.size.height / 2)
+    frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE)
+    frame.getContentPane.getComponents.foreach { cmp =>
+      cmp.addMouseListener(cycleThroughClassifiersOnMouseClick)
+    }
+    frame
+  }
+
   def record(outPath: String, threshold: Option[Float], overwriteExisting: Boolean, webcam: Boolean): Unit = {
     val imageGrabber = if (webcam) new WebcamImageGrabber() else new ScreenImageGrabber()
 
     if (!Paths.get(outPath).toFile.exists() || overwriteExisting) {
       val out = new DataOutputStream(new FileOutputStream(outPath))
       out.writeByte(Bounce.atFps(RECORDING_FPS))
-      var canvas: CanvasFrame = null
-      if (webcam) {
-        canvas = new CanvasFrame("1 Bit Animation Player")
-        canvas.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE)
-        canvas.getContentPane.getComponents.foreach { cmp =>
-          cmp.addMouseListener(cycleThroughClassifiersOnMouseClick)
-        }
-      }
+      val canvas: CanvasFrame = if (webcam) setupPreviewWindow(imageGrabber) else null
       try {
         var frameNo: Int = 0
         do {
           frameNo = frameNo + 1
           val grabbedImage = imageGrabber.grab()
-          val img          = if (webcam) ImageUtils.resize(grabbedImage, 432, 270) else grabbedImage
-          val midpoint     = encodeImage(img, threshold, out, frameNo == 1)
+          // resize is still required because imageGrabber will grab a slightly bigger image than we ask it to
+          val img =
+            if (webcam) ImageUtils.resize(grabbedImage, imageGrabber.size.width, imageGrabber.size.height)
+            else grabbedImage
+          val midpoint = encodeImage(img, threshold, out, frameNo == 1)
           if (webcam) { canvas.showImage(createPreview(img, midpoint)) }
           print(f"\rrecorded frames: $frameNo%d (estimated ${frameNo.toDouble / RECORDING_FPS}%2.2fs)")
         } while (!Thread.interrupted())
