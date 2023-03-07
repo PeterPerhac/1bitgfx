@@ -38,7 +38,13 @@ case class BlackWhiteBlock(lengths: ArrayBuffer[Int]) extends MixedColorBlock {
   override val firstColor: BlockColor = Black
 }
 
-sealed trait BlockColor
+sealed trait BlockColor {
+  def getRGB: Int = this match {
+    case Black => Color.BLACK.getRGB
+    case White => Color.WHITE.getRGB
+  }
+}
+
 case object Black extends BlockColor
 case object White extends BlockColor
 

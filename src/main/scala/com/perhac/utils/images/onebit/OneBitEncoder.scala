@@ -38,33 +38,23 @@ object OneBitEncoder {
   }
 
   def createPreview(img: BufferedImage, midpoint: Midpoint): BufferedImage = {
-    for {
-      x <- 0 until img.getWidth
-      y <- 0 until img.getHeight
-    } {
-      val c = this.pixelClassifier
-        .classifyPixel(PixelValue(new Color(img.getRGB(x, y)).getRGBColorComponents(null).sum), midpoint) match {
-        case Black => Color.BLACK
-        case White => Color.WHITE
-      }
-      img.setRGB(x, y, c.getRGB)
+    def pixelValue(color: Int): PixelValue = PixelValue(new Color(color).getRGBColorComponents(null).sum)
+    for (x <- 0 until img.getWidth; y <- 0 until img.getHeight) {
+      val pixelColour = pixelClassifier.classifyPixel(pixelValue(img.getRGB(x, y)), midpoint).getRGB
+      img.setRGB(x, y, pixelColour)
     }
     img
   }
 
   //cycle backwards with right-click
   private def cycleThroughClassifiersOnMouseClick: MouseListener = new MouseInputAdapter {
+    var idx: Int                            = 0
+    val classifiers: Array[PixelClassifier] = Array(DefaultClassifier, ContouredClassifier, LowAndHigh)
     override def mouseReleased(e: MouseEvent): Unit = {
+      def clamp(lo: Int, hi: Int)(n: Int): Int = if (n > hi) lo else if (n < lo) hi else n
       System.out.println()
-      // default -> contoured -> low/high
-      pixelClassifier = pixelClassifier match {
-        case BlockColor.DefaultClassifier =>
-          if (isLeftMouseButton(e)) ContouredClassifier else LowAndHigh
-        case BlockColor.ContouredClassifier =>
-          if (isLeftMouseButton(e)) LowAndHigh else DefaultClassifier
-        case BlockColor.LowAndHigh =>
-          if (isLeftMouseButton(e)) DefaultClassifier else ContouredClassifier
-      }
+      idx = clamp(0, classifiers.length - 1)(idx + (if (isLeftMouseButton(e)) 1 else -1))
+      pixelClassifier = classifiers(idx)
       System.out.println(s"using $pixelClassifier")
     }
   }
@@ -72,8 +62,7 @@ object OneBitEncoder {
   def setupPreviewWindow(grabber: ImageGrabber): CanvasFrame = {
     val frame = new CanvasFrame("1 Bit Animation Recorder (Preview)")
     frame.setCanvasSize(grabber.size.width, grabber.size.height)
-    val dim = Toolkit.getDefaultToolkit.getScreenSize
-    frame.setLocation(dim.width / 2 - grabber.size.width / 2, dim.height / 2 - grabber.size.height / 2)
+    frame.setLocationRelativeTo(null) // center it on screen
     frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE)
     frame.getContentPane.getComponents.foreach { cmp =>
       cmp.addMouseListener(cycleThroughClassifiersOnMouseClick)
@@ -91,6 +80,7 @@ object OneBitEncoder {
       try {
         var frameNo: Int = 0
         do {
+          Thread.sleep(10) //force a slightly lower framerate
           frameNo = frameNo + 1
           val grabbedImage = imageGrabber.grab()
           // resize is still required because imageGrabber will grab a slightly bigger image than we ask it to
@@ -219,9 +209,8 @@ object OneBitEncoder {
       compressedBlockData.close()
     }
 
-    val deflatedBytesCount = compressedByteArrayOutputStream.size()
-    out.writeInt(deflatedBytesCount)                                              //writes the NUMBER of bytes in the data block
-    out.write(compressedByteArrayOutputStream.toByteArray, 0, deflatedBytesCount) //writes the data block itself
+    out.writeInt(compressedByteArrayOutputStream.size())
+    compressedByteArrayOutputStream.writeTo(out)
   }
 
 }

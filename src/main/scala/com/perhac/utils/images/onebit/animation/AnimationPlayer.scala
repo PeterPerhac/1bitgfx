@@ -68,7 +68,9 @@ object AnimationPlayer {
       val img: BufferedImage       = new BufferedImage(metadata.imgW, metadata.imgH, TYPE_INT_RGB)
       val gfx: Graphics            = img.getGraphics
 
-      val canvas = new CanvasFrame("1 Bit Animation Player")
+      val canvas = new CanvasFrame("")
+      canvas.setCanvasSize(metadata.imgW, metadata.imgH)
+      canvas.setLocationRelativeTo(null)
       canvas.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE)
 
       val frameOffsetStream: LazyList[Frame] =
