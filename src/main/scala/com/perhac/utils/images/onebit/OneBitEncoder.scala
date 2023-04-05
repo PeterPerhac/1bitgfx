@@ -192,6 +192,8 @@ object OneBitEncoder {
         })
         .toArray
 
+    // we do NOT want to compress the block descriptors
+    // so that they always take up exactly the same number of bytes for each frame in case of animated 1bp
     out.write(blockDescriptorBytes)
 
     val compressor: Deflater            = new Deflater(Deflater.BEST_COMPRESSION, true)
