@@ -1,2 +1,0 @@
-#!/bin/bash
-java -jar target/scala-2.13/1bp-codec.jar $@
